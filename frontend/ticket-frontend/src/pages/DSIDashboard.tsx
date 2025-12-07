@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import React from "react";
 
 interface DSIDashboardProps {
   token: string;
@@ -59,6 +60,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showTicketsDropdown, setShowTicketsDropdown] = useState<boolean>(false);
   const [showReportsDropdown, setShowReportsDropdown] = useState<boolean>(false);
+  const [showSettingsDropdown, setShowSettingsDropdown] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<string>("");
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -75,6 +77,141 @@ function DSIDashboard({ token }: DSIDashboardProps) {
   const [showAddUserModal, setShowAddUserModal] = useState<boolean>(false);
   const [showEditUserModal, setShowEditUserModal] = useState<boolean>(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  
+  // États pour les paramètres d'apparence
+  const [appName, setAppName] = useState<string>(() => {
+    return localStorage.getItem("appName") || "Système de Gestion des Tickets";
+  });
+  const [appTheme, setAppTheme] = useState<string>(() => {
+    return localStorage.getItem("appTheme") || "clair";
+  });
+  const [primaryColor, setPrimaryColor] = useState<string>(() => {
+    return localStorage.getItem("primaryColor") || "#007bff";
+  });
+  const [appLogo, setAppLogo] = useState<string | null>(() => {
+    return localStorage.getItem("appLogo");
+  });
+  
+  // États locaux pour la section Apparence
+  const [localAppName, setLocalAppName] = useState(appName);
+  const [localAppTheme, setLocalAppTheme] = useState(appTheme);
+  const [localPrimaryColor, setLocalPrimaryColor] = useState(primaryColor);
+  const [localAppLogo, setLocalAppLogo] = useState(appLogo);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // États pour les types de tickets
+  const [ticketTypes, setTicketTypes] = useState<Array<{
+    id: number;
+    type: string;
+    description: string;
+    color: string;
+  }>>(() => {
+    const saved = localStorage.getItem("ticketTypes");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    // Types par défaut
+    return [
+      { id: 1, type: "Matériel", description: "Problèmes matériels", color: "#dc3545" },
+      { id: 2, type: "Applicatif", description: "Problèmes logiciels", color: "#28a745" },
+      { id: 3, type: "Réseau", description: "Problèmes réseau", color: "#ffc107" },
+      { id: 4, type: "Accès", description: "Problèmes d'accès", color: "#9c27b0" },
+      { id: 5, type: "Autre", description: "Autres problèmes", color: "#6c757d" }
+    ];
+  });
+  const [showAddTypeModal, setShowAddTypeModal] = useState(false);
+  const [editingType, setEditingType] = useState<number | null>(null);
+  const [newType, setNewType] = useState({ type: "", description: "", color: "#007bff" });
+  
+  // États pour les priorités
+  const [priorities, setPriorities] = useState<Array<{
+    id: number;
+    priority: string;
+    level: number;
+    color: string;
+    maxTime: string;
+    maxTimeValue: number;
+    maxTimeUnit: string;
+  }>>(() => {
+    const saved = localStorage.getItem("priorities");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    // Priorités par défaut
+    return [
+      { id: 1, priority: "Critique", level: 1, color: "#dc3545", maxTime: "1 heure", maxTimeValue: 1, maxTimeUnit: "heure" },
+      { id: 2, priority: "Haute", level: 2, color: "#ff9800", maxTime: "4 heures", maxTimeValue: 4, maxTimeUnit: "heures" },
+      { id: 3, priority: "Moyenne", level: 3, color: "#ffc107", maxTime: "1 jour", maxTimeValue: 1, maxTimeUnit: "jour" },
+      { id: 4, priority: "Basse", level: 4, color: "#28a745", maxTime: "3 jours", maxTimeValue: 3, maxTimeUnit: "jours" }
+    ];
+  });
+  const [showAddPriorityModal, setShowAddPriorityModal] = useState(false);
+  const [editingPriority, setEditingPriority] = useState<number | null>(null);
+  const [newPriority, setNewPriority] = useState({ 
+    priority: "", 
+    level: 1, 
+    color: "#dc3545", 
+    maxTimeValue: 1, 
+    maxTimeUnit: "heure" 
+  });
+  
+  // États pour les paramètres de sécurité
+  const [securitySettings, setSecuritySettings] = useState(() => {
+    const saved = localStorage.getItem("securitySettings");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return {
+      // Authentification
+      mfaRequired: true,
+      sessionTimeout: 30,
+      connectionHistory: true,
+      suspiciousConnectionAlerts: true,
+      // Mot de Passe
+      minPasswordLength: 8,
+      requireUppercase: true,
+      requireLowercase: true,
+      requireNumbers: true,
+      requireSpecialChars: true,
+      passwordExpiration: 90,
+      // Audit et Logging
+      recordAllActions: true,
+      recordSensitiveDataChanges: true,
+      recordFailedLogins: true,
+      keepLogsFor: 90
+    };
+  });
+  
+  // États pour les rapports
+  const [selectedReportType, setSelectedReportType] = useState<string | null>(null);
+  const [recentReports, setRecentReports] = useState<Array<{
+    id: number;
+    report: string;
+    generatedBy: string;
+    date: string;
+  }>>(() => {
+    const saved = localStorage.getItem("recentReports");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    // Rapports par défaut
+    return [
+      { id: 1, report: "Performance Janvier 2024", generatedBy: "Admin", date: "01/02/2024" },
+      { id: 2, report: "Tickets par Département", generatedBy: "DSI", date: "31/01/2024" },
+      { id: 3, report: "Satisfaction Utilisateurs", generatedBy: "Admin", date: "30/01/2024" }
+    ];
+  });
+  
+  // Mettre à jour les états locaux quand on entre dans la section Apparence
+  useEffect(() => {
+    if (activeSection === "apparence") {
+      setLocalAppName(appName);
+      setLocalAppTheme(appTheme);
+      setLocalPrimaryColor(primaryColor);
+      setLocalAppLogo(appLogo);
+    }
+  }, [activeSection, appName, appTheme, primaryColor, appLogo]);
   const [newUser, setNewUser] = useState({
     full_name: "",
     email: "",
@@ -119,6 +256,236 @@ function DSIDashboard({ token }: DSIDashboardProps) {
       status: statusValue
     });
     setShowEditUserModal(true);
+  };
+
+  // Fonctions pour la section Apparence
+  const handleSaveAppearance = () => {
+    // Sauvegarder dans localStorage
+    localStorage.setItem("appName", localAppName);
+    localStorage.setItem("appTheme", localAppTheme);
+    localStorage.setItem("primaryColor", localPrimaryColor);
+    if (localAppLogo) {
+      localStorage.setItem("appLogo", localAppLogo);
+    }
+    
+    // Mettre à jour les états globaux
+    setAppName(localAppName);
+    setAppTheme(localAppTheme);
+    setPrimaryColor(localPrimaryColor);
+    setAppLogo(localAppLogo);
+    
+    // Appliquer le thème
+    if (localAppTheme === "sombre") {
+      document.body.style.backgroundColor = "#1a1a1a";
+      document.body.style.color = "#fff";
+    } else if (localAppTheme === "clair") {
+      document.body.style.backgroundColor = "#fff";
+      document.body.style.color = "#333";
+    } else {
+      // Auto - utiliser les préférences du système
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.body.style.backgroundColor = prefersDark ? "#1a1a1a" : "#fff";
+      document.body.style.color = prefersDark ? "#fff" : "#333";
+    }
+    
+    alert("Paramètres d'apparence enregistrés avec succès !");
+  };
+
+  const handleCancelAppearance = () => {
+    setLocalAppName(appName);
+    setLocalAppTheme(appTheme);
+    setLocalPrimaryColor(primaryColor);
+    setLocalAppLogo(appLogo);
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Le fichier est trop volumineux. Taille maximale : 2MB");
+        return;
+      }
+      if (!file.type.match(/^image\/(png|jpeg|jpg)$/)) {
+        alert("Format non accepté. Utilisez PNG ou JPG");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLocalAppLogo(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDeleteLogo = () => {
+    setLocalAppLogo(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const getColorName = (color: string) => {
+    const colorMap: { [key: string]: string } = {
+      "#007bff": "Bleu",
+      "#28a745": "Vert",
+      "#dc3545": "Rouge",
+      "#ffc107": "Jaune",
+      "#6c757d": "Gris",
+      "#17a2b8": "Cyan",
+      "#ff9800": "Orange",
+      "#9c27b0": "Violet"
+    };
+    return colorMap[color] || "Personnalisé";
+  };
+
+  // Fonctions pour les types de tickets
+  const handleAddType = () => {
+    if (!newType.type.trim() || !newType.description.trim()) {
+      alert("Veuillez remplir tous les champs");
+      return;
+    }
+    const newId = ticketTypes.length > 0 ? Math.max(...ticketTypes.map(t => t.id)) + 1 : 1;
+    const updatedTypes = [...ticketTypes, { ...newType, id: newId }];
+    setTicketTypes(updatedTypes);
+    localStorage.setItem("ticketTypes", JSON.stringify(updatedTypes));
+    setNewType({ type: "", description: "", color: "#007bff" });
+    setShowAddTypeModal(false);
+    alert("Type de ticket ajouté avec succès !");
+  };
+
+  const handleEditType = (typeId: number) => {
+    const type = ticketTypes.find(t => t.id === typeId);
+    if (type) {
+      setNewType({ type: type.type, description: type.description, color: type.color });
+      setEditingType(typeId);
+      setShowAddTypeModal(true);
+    }
+  };
+
+  const handleUpdateType = () => {
+    if (!newType.type.trim() || !newType.description.trim()) {
+      alert("Veuillez remplir tous les champs");
+      return;
+    }
+    const updatedTypes = ticketTypes.map(t => 
+      t.id === editingType ? { ...t, ...newType } : t
+    );
+    setTicketTypes(updatedTypes);
+    localStorage.setItem("ticketTypes", JSON.stringify(updatedTypes));
+    setNewType({ type: "", description: "", color: "#007bff" });
+    setEditingType(null);
+    setShowAddTypeModal(false);
+    alert("Type de ticket modifié avec succès !");
+  };
+
+  const handleDeleteType = (typeId: number) => {
+    if (confirm("Êtes-vous sûr de vouloir supprimer ce type de ticket ?")) {
+      const updatedTypes = ticketTypes.filter(t => t.id !== typeId);
+      setTicketTypes(updatedTypes);
+      localStorage.setItem("ticketTypes", JSON.stringify(updatedTypes));
+      alert("Type de ticket supprimé avec succès !");
+    }
+  };
+
+  const getTypeColorName = (color: string) => {
+    const colorMap: { [key: string]: string } = {
+      "#dc3545": "Rouge",
+      "#28a745": "Vert",
+      "#ffc107": "Jaune",
+      "#9c27b0": "Violet",
+      "#6c757d": "Gris",
+      "#007bff": "Bleu",
+      "#17a2b8": "Cyan",
+      "#ff9800": "Orange"
+    };
+    return colorMap[color] || "Personnalisé";
+  };
+
+  // Fonctions pour les priorités
+  const handleAddPriority = () => {
+    if (!newPriority.priority.trim()) {
+      alert("Veuillez remplir tous les champs");
+      return;
+    }
+    const maxTime = `${newPriority.maxTimeValue} ${newPriority.maxTimeUnit}`;
+    const newId = priorities.length > 0 ? Math.max(...priorities.map(p => p.id)) + 1 : 1;
+    const updatedPriorities = [...priorities, { 
+      ...newPriority, 
+      id: newId,
+      maxTime 
+    }];
+    setPriorities(updatedPriorities);
+    localStorage.setItem("priorities", JSON.stringify(updatedPriorities));
+    setNewPriority({ priority: "", level: 1, color: "#dc3545", maxTimeValue: 1, maxTimeUnit: "heure" });
+    setShowAddPriorityModal(false);
+    alert("Priorité ajoutée avec succès !");
+  };
+
+  const handleEditPriority = (priorityId: number) => {
+    const priority = priorities.find(p => p.id === priorityId);
+    if (priority) {
+      setNewPriority({ 
+        priority: priority.priority, 
+        level: priority.level, 
+        color: priority.color, 
+        maxTimeValue: priority.maxTimeValue, 
+        maxTimeUnit: priority.maxTimeUnit 
+      });
+      setEditingPriority(priorityId);
+      setShowAddPriorityModal(true);
+    }
+  };
+
+  const handleUpdatePriority = () => {
+    if (!newPriority.priority.trim()) {
+      alert("Veuillez remplir tous les champs");
+      return;
+    }
+    const maxTime = `${newPriority.maxTimeValue} ${newPriority.maxTimeUnit}`;
+    const updatedPriorities = priorities.map(p => 
+      p.id === editingPriority ? { ...p, ...newPriority, maxTime } : p
+    );
+    setPriorities(updatedPriorities);
+    localStorage.setItem("priorities", JSON.stringify(updatedPriorities));
+    setNewPriority({ priority: "", level: 1, color: "#dc3545", maxTimeValue: 1, maxTimeUnit: "heure" });
+    setEditingPriority(null);
+    setShowAddPriorityModal(false);
+    alert("Priorité modifiée avec succès !");
+  };
+
+  const handleDeletePriority = (priorityId: number) => {
+    if (confirm("Êtes-vous sûr de vouloir supprimer cette priorité ?")) {
+      const updatedPriorities = priorities.filter(p => p.id !== priorityId);
+      setPriorities(updatedPriorities);
+      localStorage.setItem("priorities", JSON.stringify(updatedPriorities));
+      alert("Priorité supprimée avec succès !");
+    }
+  };
+
+  const getPriorityColorName = (color: string) => {
+    const colorMap: { [key: string]: string } = {
+      "#dc3545": "Rouge",
+      "#ff9800": "Orange",
+      "#ffc107": "Jaune",
+      "#28a745": "Vert",
+      "#007bff": "Bleu",
+      "#6c757d": "Gris",
+      "#9c27b0": "Violet"
+    };
+    return colorMap[color] || "Personnalisé";
+  };
+
+  // Fonction pour sauvegarder les paramètres de sécurité
+  const handleSaveSecurity = () => {
+    localStorage.setItem("securitySettings", JSON.stringify(securitySettings));
+    alert("Paramètres de sécurité enregistrés avec succès !");
+  };
+
+  const handleCancelSecurity = () => {
+    const saved = localStorage.getItem("securitySettings");
+    if (saved) {
+      setSecuritySettings(JSON.parse(saved));
+    }
   };
 
   async function loadNotifications() {
@@ -187,6 +554,22 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     localStorage.removeItem("userRole");
     window.location.href = "/";
   }
+
+  // Appliquer le thème et la couleur primaire au chargement
+  useEffect(() => {
+    if (appTheme === "sombre") {
+      document.body.style.backgroundColor = "#1a1a1a";
+      document.body.style.color = "#fff";
+    } else if (appTheme === "clair") {
+      document.body.style.backgroundColor = "#fff";
+      document.body.style.color = "#333";
+    } else {
+      // Auto - utiliser les préférences du système
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.body.style.backgroundColor = prefersDark ? "#1a1a1a" : "#fff";
+      document.body.style.color = prefersDark ? "#fff" : "#333";
+    }
+  }, [appTheme]);
 
   useEffect(() => {
     async function loadData() {
@@ -545,7 +928,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                 <path d="M12 11V21" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
               </svg>
             </div>
-            <div style={{ fontSize: "18px", fontWeight: "600" }}>Gestion d'Incidents</div>
+            <div style={{ fontSize: "18px", fontWeight: "600" }}>{appName}</div>
           </div>
         </div>
         <div 
@@ -834,26 +1217,131 @@ function DSIDashboard({ token }: DSIDashboardProps) {
           )}
         </div>
         {userRole === "Admin" && (
-          <div 
-            onClick={() => setActiveSection("settings")}
-            style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: "12px", 
-              padding: "12px 16px", 
-              cursor: "pointer",
-              color: "white",
-              borderRadius: "4px",
-              background: activeSection === "settings" ? "rgba(255,255,255,0.1)" : "transparent"
-            }}
-          >
-            <div style={{ width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
-              </svg>
+          <div>
+            <div
+              onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
+              style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: "12px", 
+                padding: "12px 16px", 
+                cursor: "pointer",
+                color: "white",
+                borderRadius: "4px",
+                background: activeSection === "settings" ? "rgba(255,255,255,0.1)" : "transparent"
+              }}
+            >
+              <div style={{ width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>Paramètres</div>
+              <div style={{ fontSize: "12px" }}>{showSettingsDropdown ? "▼" : "▶"}</div>
             </div>
-            <div style={{ flex: 1 }}>Paramètres</div>
+            {showSettingsDropdown && (
+              <div style={{ 
+                marginLeft: "36px", 
+                marginTop: "8px", 
+                marginBottom: "8px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px"
+              }}>
+                <div
+                  onClick={() => setActiveSection("apparence")}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    color: "white",
+                    borderRadius: "4px",
+                    background: activeSection === "apparence" ? "rgba(255,255,255,0.1)" : "transparent",
+                    fontSize: "14px"
+                  }}
+                >
+                  Apparence
+                </div>
+                <div
+                  onClick={() => setActiveSection("email")}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    color: "white",
+                    borderRadius: "4px",
+                    background: activeSection === "email" ? "rgba(255,255,255,0.1)" : "transparent",
+                    fontSize: "14px"
+                  }}
+                >
+                  Email
+                </div>
+                <div
+                  onClick={() => setActiveSection("securite")}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    color: "white",
+                    borderRadius: "4px",
+                    background: activeSection === "securite" ? "rgba(255,255,255,0.1)" : "transparent",
+                    fontSize: "14px"
+                  }}
+                >
+                  Sécurité
+                </div>
+                <div
+                  onClick={() => setActiveSection("types-tickets")}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    color: "white",
+                    borderRadius: "4px",
+                    background: activeSection === "types-tickets" ? "rgba(255,255,255,0.1)" : "transparent",
+                    fontSize: "14px"
+                  }}
+                >
+                  Types de Tickets
+                </div>
+                <div
+                  onClick={() => setActiveSection("priorites")}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    color: "white",
+                    borderRadius: "4px",
+                    background: activeSection === "priorites" ? "rgba(255,255,255,0.1)" : "transparent",
+                    fontSize: "14px"
+                  }}
+                >
+                  Priorités
+                </div>
+                <div
+                  onClick={() => setActiveSection("rapports-settings")}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    color: "white",
+                    borderRadius: "4px",
+                    background: activeSection === "rapports-settings" ? "rgba(255,255,255,0.1)" : "transparent",
+                    fontSize: "14px"
+                  }}
+                >
+                  Rapports
+                </div>
+                <div
+                  onClick={() => setActiveSection("maintenance")}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    color: "white",
+                    borderRadius: "4px",
+                    background: activeSection === "maintenance" ? "rgba(255,255,255,0.1)" : "transparent",
+                    fontSize: "14px"
+                  }}
+                >
+                  Maintenance
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2096,6 +2584,1514 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                </>
              );
            })()}
+
+           {activeSection === "apparence" && (
+               <div style={{ padding: "24px" }}>
+                 <h1 style={{ marginBottom: "32px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
+                   Apparence
+                 </h1>
+
+                 {/* Nom de l'Application */}
+                 <div style={{ 
+                   marginBottom: "32px", 
+                   border: "1px solid #ddd", 
+                   borderRadius: "8px", 
+                   padding: "24px",
+                   background: "white"
+                 }}>
+                   <h3 style={{ marginBottom: "16px", fontSize: "18px", fontWeight: "600", color: "#333" }}>
+                     Nom de l'Application
+                   </h3>
+                   <input
+                     type="text"
+                     value={localAppName}
+                     onChange={(e) => setLocalAppName(e.target.value)}
+                     placeholder="Système de Gestion des Tickets_______"
+                     style={{
+                       width: "100%",
+                       padding: "12px 16px",
+                       border: "1px solid #ddd",
+                       borderRadius: "4px",
+                       fontSize: "14px",
+                       marginBottom: "8px"
+                     }}
+                   />
+                   <p style={{ margin: 0, fontSize: "14px", color: "#666" }}>
+                     Ce nom apparaît dans l'en-tête de l'application
+                   </p>
+                 </div>
+
+                 {/* Logo de l'Application */}
+                 <div style={{ 
+                   marginBottom: "32px", 
+                   border: "1px solid #ddd", 
+                   borderRadius: "8px", 
+                   padding: "24px",
+                   background: "white"
+                 }}>
+                   <h3 style={{ marginBottom: "16px", fontSize: "18px", fontWeight: "600", color: "#333" }}>
+                     Logo de l'Application
+                   </h3>
+                   {localAppLogo && (
+                     <div style={{ marginBottom: "12px" }}>
+                       <img 
+                         src={localAppLogo} 
+                         alt="Logo actuel" 
+                         style={{ maxWidth: "200px", maxHeight: "100px", marginBottom: "12px" }}
+                       />
+                     </div>
+                   )}
+                   <div style={{ display: "flex", gap: "12px", marginBottom: "12px", flexWrap: "wrap" }}>
+                     {localAppLogo && (
+                       <button
+                         onClick={() => {
+                           const newWindow = window.open();
+                           if (newWindow) {
+                             newWindow.document.write(`<img src="${localAppLogo}" style="max-width: 100%;" />`);
+                           }
+                         }}
+                         style={{
+                           padding: "8px 16px",
+                           backgroundColor: "#f8f9fa",
+                           color: "#333",
+                           border: "1px solid #ddd",
+                           borderRadius: "4px",
+                           cursor: "pointer",
+                           fontSize: "14px"
+                         }}
+                       >
+                         [Logo actuel]
+                       </button>
+                     )}
+                     <button
+                       onClick={() => fileInputRef.current?.click()}
+                       style={{
+                         padding: "8px 16px",
+                         backgroundColor: "#007bff",
+                         color: "white",
+                         border: "none",
+                         borderRadius: "4px",
+                         cursor: "pointer",
+                         fontSize: "14px"
+                       }}
+                     >
+                       [Télécharger nouveau logo]
+                     </button>
+                     <input
+                       ref={fileInputRef}
+                       type="file"
+                       accept="image/png,image/jpeg,image/jpg"
+                       onChange={handleLogoUpload}
+                       style={{ display: "none" }}
+                     />
+                     {localAppLogo && (
+                       <button
+                         onClick={handleDeleteLogo}
+                         style={{
+                           padding: "8px 16px",
+                           backgroundColor: "#dc3545",
+                           color: "white",
+                           border: "none",
+                           borderRadius: "4px",
+                           cursor: "pointer",
+                           fontSize: "14px"
+                         }}
+                       >
+                         [Supprimer]
+                       </button>
+                     )}
+                   </div>
+                   <p style={{ margin: 0, fontSize: "14px", color: "#666" }}>
+                     Format accepté : PNG, JPG (Max <span style={{ color: "#007bff" }}>2MB</span>)
+                   </p>
+                 </div>
+
+                 {/* Thème */}
+                 <div style={{ 
+                   marginBottom: "32px", 
+                   border: "1px solid #ddd", 
+                   borderRadius: "8px", 
+                   padding: "24px",
+                   background: "white"
+                 }}>
+                   <h3 style={{ marginBottom: "16px", fontSize: "18px", fontWeight: "600", color: "#333" }}>
+                     <span style={{ color: "#dc3545" }}>Thème</span>
+                   </h3>
+                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                       <input
+                         type="radio"
+                         name="theme"
+                         value="clair"
+                         checked={localAppTheme === "clair"}
+                         onChange={(e) => setLocalAppTheme(e.target.value)}
+                         style={{ cursor: "pointer" }}
+                       />
+                       <span>Clair</span>
+                     </label>
+                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                       <input
+                         type="radio"
+                         name="theme"
+                         value="sombre"
+                         checked={localAppTheme === "sombre"}
+                         onChange={(e) => setLocalAppTheme(e.target.value)}
+                         style={{ cursor: "pointer" }}
+                       />
+                       <span>Sombre</span>
+                     </label>
+                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                       <input
+                         type="radio"
+                         name="theme"
+                         value="auto"
+                         checked={localAppTheme === "auto"}
+                         onChange={(e) => setLocalAppTheme(e.target.value)}
+                         style={{ cursor: "pointer" }}
+                       />
+                       <span><span style={{ color: "#dc3545" }}>Auto</span> (selon les préférences du <span style={{ color: "#dc3545" }}>système</span>)</span>
+                     </label>
+                   </div>
+                 </div>
+
+                 {/* Couleur Primaire */}
+                 <div style={{ 
+                   marginBottom: "32px", 
+                   border: "1px solid #ddd", 
+                   borderRadius: "8px", 
+                   padding: "24px",
+                   background: "white"
+                 }}>
+                   <h3 style={{ marginBottom: "16px", fontSize: "18px", fontWeight: "600", color: "#333" }}>
+                     Couleur Primaire
+                   </h3>
+                   <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                       <div style={{ 
+                         width: "24px", 
+                         height: "24px", 
+                         backgroundColor: localPrimaryColor, 
+                         borderRadius: "4px",
+                         border: "1px solid #ddd"
+                       }}></div>
+                       <span style={{ fontSize: "14px", color: "#333" }}>[■ {getColorName(localPrimaryColor)}]</span>
+                     </div>
+                     <input
+                       type="color"
+                       value={localPrimaryColor}
+                       onChange={(e) => setLocalPrimaryColor(e.target.value)}
+                       style={{
+                         width: "40px",
+                         height: "40px",
+                         border: "1px solid #ddd",
+                         borderRadius: "4px",
+                         cursor: "pointer"
+                       }}
+                     />
+                     <button
+                       onClick={() => setShowColorPicker(!showColorPicker)}
+                       style={{
+                         padding: "8px 16px",
+                         backgroundColor: "#f8f9fa",
+                         color: "#333",
+                         border: "1px solid #ddd",
+                         borderRadius: "4px",
+                         cursor: "pointer",
+                         fontSize: "14px"
+                       }}
+                     >
+                       [Sélectionner une couleur]
+                     </button>
+                   </div>
+                   {showColorPicker && (
+                     <div style={{ marginTop: "16px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                       {["#007bff", "#28a745", "#dc3545", "#ffc107", "#6c757d", "#17a2b8", "#ff9800", "#9c27b0"].map((color) => (
+                         <div
+                           key={color}
+                           onClick={() => {
+                             setLocalPrimaryColor(color);
+                             setShowColorPicker(false);
+                           }}
+                           style={{
+                             width: "40px",
+                             height: "40px",
+                             backgroundColor: color,
+                             borderRadius: "4px",
+                             border: localPrimaryColor === color ? "3px solid #333" : "1px solid #ddd",
+                             cursor: "pointer"
+                           }}
+                         />
+                       ))}
+                     </div>
+                   )}
+                 </div>
+
+                 {/* Boutons d'action */}
+                 <div style={{ 
+                   display: "flex", 
+                   justifyContent: "flex-end", 
+                   gap: "12px",
+                   marginTop: "32px",
+                   paddingTop: "24px",
+                   borderTop: "1px solid #eee"
+                 }}>
+                   <button
+                     onClick={handleCancelAppearance}
+                     style={{
+                       padding: "10px 20px",
+                       backgroundColor: "#6c757d",
+                       color: "white",
+                       border: "none",
+                       borderRadius: "4px",
+                       cursor: "pointer",
+                       fontSize: "14px"
+                     }}
+                   >
+                     [Annuler]
+                   </button>
+                   <button
+                     onClick={handleSaveAppearance}
+                     style={{
+                       padding: "10px 20px",
+                       backgroundColor: "#28a745",
+                       color: "white",
+                       border: "none",
+                       borderRadius: "4px",
+                       cursor: "pointer",
+                       fontSize: "14px"
+                     }}
+                   >
+                     [Enregistrer]
+                   </button>
+                 </div>
+               </div>
+           )}
+
+           {activeSection === "types-tickets" && (
+             <div style={{ padding: "24px" }}>
+               <h1 style={{ marginBottom: "24px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
+                 Types de Tickets
+               </h1>
+
+               {/* Bouton Ajouter */}
+               <div style={{ marginBottom: "24px" }}>
+                 <button
+                   onClick={() => {
+                     setNewType({ type: "", description: "", color: "#007bff" });
+                     setEditingType(null);
+                     setShowAddTypeModal(true);
+                   }}
+                   style={{
+                     padding: "10px 20px",
+                     backgroundColor: "white",
+                     color: "#007bff",
+                     border: "1px solid #007bff",
+                     borderRadius: "4px",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: "500"
+                   }}
+                 >
+                   [+ Ajouter un type]
+                 </button>
+               </div>
+
+               {/* Tableau des types */}
+               <div style={{ 
+                 background: "white", 
+                 borderRadius: "8px", 
+                 boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                 overflow: "hidden"
+               }}>
+                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                   <thead>
+                     <tr style={{ background: "#f8f9fa", borderBottom: "2px solid #dee2e6" }}>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Type</th>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Description</th>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Couleur</th>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Actions</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {ticketTypes.map((ticketType) => (
+                       <tr key={ticketType.id} style={{ borderBottom: "1px solid #dee2e6" }}>
+                         <td style={{ padding: "12px 16px", color: "#333" }}>{ticketType.type}</td>
+                         <td style={{ padding: "12px 16px", color: "#333" }}>
+                           {ticketType.description.includes("d'accès") ? (
+                             <>
+                               {ticketType.description.split("d'accès")[0]}
+                               <span style={{ color: "#ff9800" }}>d'accès</span>
+                               {ticketType.description.split("d'accès")[1]}
+                             </>
+                           ) : (
+                             ticketType.description
+                           )}
+                         </td>
+                         <td style={{ padding: "12px 16px" }}>
+                           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                             <div style={{
+                               width: "20px",
+                               height: "20px",
+                               borderRadius: "50%",
+                               backgroundColor: ticketType.color,
+                               border: "1px solid #ddd"
+                             }}></div>
+                             <span style={{ color: "#333" }}>{getTypeColorName(ticketType.color)}</span>
+                           </div>
+                         </td>
+                         <td style={{ padding: "12px 16px" }}>
+                           <div style={{ display: "flex", gap: "12px" }}>
+                             <button
+                               onClick={() => handleEditType(ticketType.id)}
+                               style={{
+                                 padding: "0",
+                                 backgroundColor: "transparent",
+                                 border: "none",
+                                 cursor: "pointer",
+                                 display: "flex",
+                                 alignItems: "center",
+                                 justifyContent: "center",
+                                 width: "28px",
+                                 height: "28px"
+                               }}
+                               title="Modifier"
+                             >
+                               <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                                 {/* Crayon jaune */}
+                                 <path d="M6 22L2 18L10 10L14 14L6 22Z" fill="#ffc107" stroke="#d4a574" strokeWidth="0.8"/>
+                                 <path d="M2 18L6 22L2 22L2 18Z" fill="#d4a574"/>
+                                 <path d="M10 10L14 14L10 14L10 10Z" fill="#ffeb3b"/>
+                                 {/* Pointe grise */}
+                                 <path d="M2 18L6 22L2 22Z" fill="#757575"/>
+                                 {/* Gomme rose */}
+                                 <rect x="20" y="2" width="4" height="4" rx="0.5" fill="#ffb3d9" stroke="#ff91c7" strokeWidth="0.5"/>
+                                 {/* Bande métallique bleue */}
+                                 <rect x="19" y="5" width="6" height="1.5" fill="#87ceeb"/>
+                               </svg>
+                             </button>
+                             <button
+                               onClick={() => handleDeleteType(ticketType.id)}
+                               style={{
+                                 padding: "0",
+                                 backgroundColor: "transparent",
+                                 border: "none",
+                                 cursor: "pointer",
+                                 display: "flex",
+                                 alignItems: "center",
+                                 justifyContent: "center",
+                                 width: "28px",
+                                 height: "28px"
+                               }}
+                               title="Supprimer"
+                             >
+                               <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                                 {/* Poubelle bleue claire avec motif grille */}
+                                 <rect x="7" y="6" width="14" height="16" rx="1.5" fill="#87ceeb" stroke="#5ba3d4" strokeWidth="1.2"/>
+                                 {/* Motif de grille */}
+                                 <line x1="10" y1="8" x2="10" y2="20" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="14" y1="8" x2="14" y2="20" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="18" y1="8" x2="18" y2="20" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="10" x2="20" y2="10" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="13" x2="20" y2="13" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="16" x2="20" y2="16" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="19" x2="20" y2="19" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 {/* Bord supérieur */}
+                                 <rect x="9" y="3" width="10" height="3" rx="0.5" fill="#5ba3d4"/>
+                               </svg>
+                             </button>
+                           </div>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+
+               {/* Modal Ajouter/Modifier un type */}
+               {showAddTypeModal && (
+                 <div 
+                   onClick={() => {
+                     setShowAddTypeModal(false);
+                     setEditingType(null);
+                     setNewType({ type: "", description: "", color: "#007bff" });
+                   }}
+                   style={{
+                     position: "fixed",
+                     top: 0,
+                     left: 0,
+                     right: 0,
+                     bottom: 0,
+                     background: "rgba(0,0,0,0.5)",
+                     display: "flex",
+                     alignItems: "center",
+                     justifyContent: "center",
+                     zIndex: 1000,
+                     padding: "20px"
+                   }}
+                 >
+                   <div 
+                     onClick={(e) => e.stopPropagation()}
+                     style={{
+                       background: "white",
+                       borderRadius: "12px",
+                       width: "100%",
+                       maxWidth: "500px",
+                       boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+                       padding: "24px"
+                     }}
+                   >
+                     <h2 style={{ marginBottom: "24px", fontSize: "24px", fontWeight: "600", color: "#333" }}>
+                       {editingType ? "Modifier le type" : "Ajouter un type"}
+                     </h2>
+                     
+                     <div style={{ marginBottom: "16px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", color: "#333", fontWeight: "500" }}>
+                         Type <span style={{ color: "#dc3545" }}>*</span>
+                       </label>
+                       <input
+                         type="text"
+                         value={newType.type}
+                         onChange={(e) => setNewType({ ...newType, type: e.target.value })}
+                         placeholder="Ex: Matériel"
+                         style={{
+                           width: "100%",
+                           padding: "10px 12px",
+                           border: "1px solid #ddd",
+                           borderRadius: "4px",
+                           fontSize: "14px"
+                         }}
+                       />
+                     </div>
+
+                     <div style={{ marginBottom: "16px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", color: "#333", fontWeight: "500" }}>
+                         Description <span style={{ color: "#dc3545" }}>*</span>
+                       </label>
+                       <input
+                         type="text"
+                         value={newType.description}
+                         onChange={(e) => setNewType({ ...newType, description: e.target.value })}
+                         placeholder="Ex: Problèmes matériels"
+                         style={{
+                           width: "100%",
+                           padding: "10px 12px",
+                           border: "1px solid #ddd",
+                           borderRadius: "4px",
+                           fontSize: "14px"
+                         }}
+                       />
+                     </div>
+
+                     <div style={{ marginBottom: "24px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", color: "#333", fontWeight: "500" }}>
+                         Couleur
+                       </label>
+                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                           <div style={{
+                             width: "30px",
+                             height: "30px",
+                             borderRadius: "50%",
+                             backgroundColor: newType.color,
+                             border: "1px solid #ddd"
+                           }}></div>
+                           <input
+                             type="color"
+                             value={newType.color}
+                             onChange={(e) => setNewType({ ...newType, color: e.target.value })}
+                             style={{
+                               width: "50px",
+                               height: "40px",
+                               border: "1px solid #ddd",
+                               borderRadius: "4px",
+                               cursor: "pointer"
+                             }}
+                           />
+                         </div>
+                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                           {["#dc3545", "#28a745", "#ffc107", "#9c27b0", "#6c757d", "#007bff", "#17a2b8", "#ff9800"].map((color) => (
+                             <div
+                               key={color}
+                               onClick={() => setNewType({ ...newType, color })}
+                               style={{
+                                 width: "30px",
+                                 height: "30px",
+                                 borderRadius: "50%",
+                                 backgroundColor: color,
+                                 border: newType.color === color ? "3px solid #333" : "1px solid #ddd",
+                                 cursor: "pointer"
+                               }}
+                             />
+                           ))}
+                         </div>
+                       </div>
+                     </div>
+
+                     <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+                       <button
+                         onClick={() => {
+                           setShowAddTypeModal(false);
+                           setEditingType(null);
+                           setNewType({ type: "", description: "", color: "#007bff" });
+                         }}
+                         style={{
+                           padding: "10px 20px",
+                           backgroundColor: "#6c757d",
+                           color: "white",
+                           border: "none",
+                           borderRadius: "4px",
+                           cursor: "pointer",
+                           fontSize: "14px"
+                         }}
+                       >
+                         Annuler
+                       </button>
+                       <button
+                         onClick={editingType ? handleUpdateType : handleAddType}
+                         style={{
+                           padding: "10px 20px",
+                           backgroundColor: "#28a745",
+                           color: "white",
+                           border: "none",
+                           borderRadius: "4px",
+                           cursor: "pointer",
+                           fontSize: "14px"
+                         }}
+                       >
+                         {editingType ? "Modifier" : "Ajouter"}
+                       </button>
+                     </div>
+                   </div>
+                 </div>
+               )}
+             </div>
+           )}
+
+           {activeSection === "priorites" && (
+             <div style={{ padding: "24px" }}>
+               <h1 style={{ marginBottom: "24px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
+                 Priorités
+               </h1>
+
+               {/* Bouton Ajouter */}
+               <div style={{ marginBottom: "24px" }}>
+                 <button
+                   onClick={() => {
+                     setNewPriority({ priority: "", level: 1, color: "#dc3545", maxTimeValue: 1, maxTimeUnit: "heure" });
+                     setEditingPriority(null);
+                     setShowAddPriorityModal(true);
+                   }}
+                   style={{
+                     padding: "10px 20px",
+                     backgroundColor: "white",
+                     color: "#007bff",
+                     border: "1px solid #007bff",
+                     borderRadius: "4px",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: "500"
+                   }}
+                 >
+                   [+ Ajouter une priorité]
+                 </button>
+               </div>
+
+               {/* Tableau des priorités */}
+               <div style={{ 
+                 background: "white", 
+                 borderRadius: "8px", 
+                 boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                 overflow: "hidden"
+               }}>
+                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                   <thead>
+                     <tr style={{ background: "#f8f9fa", borderBottom: "2px solid #dee2e6" }}>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Priorité</th>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Niveau</th>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Couleur</th>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Temps Max</th>
+                       <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #dee2e6" }}>Actions</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {priorities.map((priority) => (
+                       <tr key={priority.id} style={{ borderBottom: "1px solid #dee2e6" }}>
+                         <td style={{ padding: "12px 16px", color: "#333" }}>{priority.priority}</td>
+                         <td style={{ padding: "12px 16px", color: "#007bff", fontWeight: "500" }}>{priority.level}</td>
+                         <td style={{ padding: "12px 16px" }}>
+                           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                             <div style={{
+                               width: "20px",
+                               height: "20px",
+                               borderRadius: "50%",
+                               backgroundColor: priority.color,
+                               border: "1px solid #ddd"
+                             }}></div>
+                             <span style={{ color: "#333" }}>{getPriorityColorName(priority.color)}</span>
+                           </div>
+                         </td>
+                         <td style={{ padding: "12px 16px" }}>
+                           <span style={{ color: "#333" }}>
+                             <span style={{ color: "#007bff", fontWeight: "500" }}>{priority.maxTimeValue}</span> {priority.maxTimeUnit}
+                           </span>
+                         </td>
+                         <td style={{ padding: "12px 16px" }}>
+                           <div style={{ display: "flex", gap: "12px" }}>
+                             <button
+                               onClick={() => handleEditPriority(priority.id)}
+                               style={{
+                                 padding: "0",
+                                 backgroundColor: "transparent",
+                                 border: "none",
+                                 cursor: "pointer",
+                                 display: "flex",
+                                 alignItems: "center",
+                                 justifyContent: "center",
+                                 width: "28px",
+                                 height: "28px"
+                               }}
+                               title="Modifier"
+                             >
+                               <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                                 {/* Crayon jaune */}
+                                 <path d="M6 22L2 18L10 10L14 14L6 22Z" fill="#ffc107" stroke="#d4a574" strokeWidth="0.8"/>
+                                 <path d="M2 18L6 22L2 22L2 18Z" fill="#d4a574"/>
+                                 <path d="M10 10L14 14L10 14L10 10Z" fill="#ffeb3b"/>
+                                 <path d="M2 18L6 22L2 22Z" fill="#757575"/>
+                                 <rect x="20" y="2" width="4" height="4" rx="0.5" fill="#ffb3d9" stroke="#ff91c7" strokeWidth="0.5"/>
+                                 <rect x="19" y="5" width="6" height="1.5" fill="#87ceeb"/>
+                               </svg>
+                             </button>
+                             <button
+                               onClick={() => handleDeletePriority(priority.id)}
+                               style={{
+                                 padding: "0",
+                                 backgroundColor: "transparent",
+                                 border: "none",
+                                 cursor: "pointer",
+                                 display: "flex",
+                                 alignItems: "center",
+                                 justifyContent: "center",
+                                 width: "28px",
+                                 height: "28px"
+                               }}
+                               title="Supprimer"
+                             >
+                               <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                                 {/* Poubelle bleue claire avec motif grille */}
+                                 <rect x="7" y="6" width="14" height="16" rx="1.5" fill="#87ceeb" stroke="#5ba3d4" strokeWidth="1.2"/>
+                                 <line x1="10" y1="8" x2="10" y2="20" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="14" y1="8" x2="14" y2="20" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="18" y1="8" x2="18" y2="20" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="10" x2="20" y2="10" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="13" x2="20" y2="13" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="16" x2="20" y2="16" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <line x1="8" y1="19" x2="20" y2="19" stroke="#5ba3d4" strokeWidth="0.6" opacity="0.7"/>
+                                 <rect x="9" y="3" width="10" height="3" rx="0.5" fill="#5ba3d4"/>
+                               </svg>
+                             </button>
+                           </div>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+
+               {/* Note */}
+               <div style={{ marginTop: "24px", padding: "12px", background: "#f8f9fa", borderRadius: "4px" }}>
+                 <p style={{ margin: 0, fontSize: "14px", color: "#666", fontStyle: "italic" }}>
+                   Note : Les temps max sont utilisés pour générer des alertes
+                 </p>
+               </div>
+
+               {/* Modal Ajouter/Modifier une priorité */}
+               {showAddPriorityModal && (
+                 <div 
+                   onClick={() => {
+                     setShowAddPriorityModal(false);
+                     setEditingPriority(null);
+                     setNewPriority({ priority: "", level: 1, color: "#dc3545", maxTimeValue: 1, maxTimeUnit: "heure" });
+                   }}
+                   style={{
+                     position: "fixed",
+                     top: 0,
+                     left: 0,
+                     right: 0,
+                     bottom: 0,
+                     background: "rgba(0,0,0,0.5)",
+                     display: "flex",
+                     alignItems: "center",
+                     justifyContent: "center",
+                     zIndex: 1000,
+                     padding: "20px"
+                   }}
+                 >
+                   <div 
+                     onClick={(e) => e.stopPropagation()}
+                     style={{
+                       background: "white",
+                       borderRadius: "12px",
+                       width: "100%",
+                       maxWidth: "500px",
+                       boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+                       padding: "24px"
+                     }}
+                   >
+                     <h2 style={{ marginBottom: "24px", fontSize: "24px", fontWeight: "600", color: "#333" }}>
+                       {editingPriority ? "Modifier la priorité" : "Ajouter une priorité"}
+                     </h2>
+                     
+                     <div style={{ marginBottom: "16px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", color: "#333", fontWeight: "500" }}>
+                         Priorité <span style={{ color: "#dc3545" }}>*</span>
+                       </label>
+                       <input
+                         type="text"
+                         value={newPriority.priority}
+                         onChange={(e) => setNewPriority({ ...newPriority, priority: e.target.value })}
+                         placeholder="Ex: Critique"
+                         style={{
+                           width: "100%",
+                           padding: "10px 12px",
+                           border: "1px solid #ddd",
+                           borderRadius: "4px",
+                           fontSize: "14px"
+                         }}
+                       />
+                     </div>
+
+                     <div style={{ marginBottom: "16px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", color: "#333", fontWeight: "500" }}>
+                         Niveau <span style={{ color: "#dc3545" }}>*</span>
+                       </label>
+                       <input
+                         type="number"
+                         min="1"
+                         value={newPriority.level}
+                         onChange={(e) => setNewPriority({ ...newPriority, level: parseInt(e.target.value) || 1 })}
+                         style={{
+                           width: "100%",
+                           padding: "10px 12px",
+                           border: "1px solid #ddd",
+                           borderRadius: "4px",
+                           fontSize: "14px"
+                         }}
+                       />
+                     </div>
+
+                     <div style={{ marginBottom: "16px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", color: "#333", fontWeight: "500" }}>
+                         Couleur
+                       </label>
+                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                           <div style={{
+                             width: "30px",
+                             height: "30px",
+                             borderRadius: "50%",
+                             backgroundColor: newPriority.color,
+                             border: "1px solid #ddd"
+                           }}></div>
+                           <input
+                             type="color"
+                             value={newPriority.color}
+                             onChange={(e) => setNewPriority({ ...newPriority, color: e.target.value })}
+                             style={{
+                               width: "50px",
+                               height: "40px",
+                               border: "1px solid #ddd",
+                               borderRadius: "4px",
+                               cursor: "pointer"
+                             }}
+                           />
+                         </div>
+                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                           {["#dc3545", "#ff9800", "#ffc107", "#28a745", "#007bff", "#6c757d", "#9c27b0"].map((color) => (
+                             <div
+                               key={color}
+                               onClick={() => setNewPriority({ ...newPriority, color })}
+                               style={{
+                                 width: "30px",
+                                 height: "30px",
+                                 borderRadius: "50%",
+                                 backgroundColor: color,
+                                 border: newPriority.color === color ? "3px solid #333" : "1px solid #ddd",
+                                 cursor: "pointer"
+                               }}
+                             />
+                           ))}
+                         </div>
+                       </div>
+                     </div>
+
+                     <div style={{ marginBottom: "24px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", color: "#333", fontWeight: "500" }}>
+                         Temps Max <span style={{ color: "#dc3545" }}>*</span>
+                       </label>
+                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                         <input
+                           type="number"
+                           min="1"
+                           value={newPriority.maxTimeValue}
+                           onChange={(e) => setNewPriority({ ...newPriority, maxTimeValue: parseInt(e.target.value) || 1 })}
+                           style={{
+                             width: "100px",
+                             padding: "10px 12px",
+                             border: "1px solid #ddd",
+                             borderRadius: "4px",
+                             fontSize: "14px"
+                           }}
+                         />
+                         <select
+                           value={newPriority.maxTimeUnit}
+                           onChange={(e) => setNewPriority({ ...newPriority, maxTimeUnit: e.target.value })}
+                           style={{
+                             padding: "10px 12px",
+                             border: "1px solid #ddd",
+                             borderRadius: "4px",
+                             fontSize: "14px"
+                           }}
+                         >
+                           <option value="heure">heure</option>
+                           <option value="heures">heures</option>
+                           <option value="jour">jour</option>
+                           <option value="jours">jours</option>
+                         </select>
+                       </div>
+                     </div>
+
+                     <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+                       <button
+                         onClick={() => {
+                           setShowAddPriorityModal(false);
+                           setEditingPriority(null);
+                           setNewPriority({ priority: "", level: 1, color: "#dc3545", maxTimeValue: 1, maxTimeUnit: "heure" });
+                         }}
+                         style={{
+                           padding: "10px 20px",
+                           backgroundColor: "#6c757d",
+                           color: "white",
+                           border: "none",
+                           borderRadius: "4px",
+                           cursor: "pointer",
+                           fontSize: "14px"
+                         }}
+                       >
+                         Annuler
+                       </button>
+                       <button
+                         onClick={editingPriority ? handleUpdatePriority : handleAddPriority}
+                         style={{
+                           padding: "10px 20px",
+                           backgroundColor: "#28a745",
+                           color: "white",
+                           border: "none",
+                           borderRadius: "4px",
+                           cursor: "pointer",
+                           fontSize: "14px"
+                         }}
+                       >
+                         {editingPriority ? "Modifier" : "Ajouter"}
+                       </button>
+                     </div>
+                   </div>
+                 </div>
+               )}
+             </div>
+           )}
+
+           {activeSection === "securite" && (
+             <div style={{ padding: "24px" }}>
+               <h1 style={{ marginBottom: "32px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
+                 Sécurité
+               </h1>
+
+               {/* Section Authentification */}
+               <div style={{ 
+                 marginBottom: "32px", 
+                 border: "1px solid #ddd", 
+                 borderRadius: "8px", 
+                 padding: "24px",
+                 background: "white"
+               }}>
+                 <h3 style={{ marginBottom: "20px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                   Authentification
+                 </h3>
+                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.mfaRequired}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, mfaRequired: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Authentification Multi-Facteurs (MFA) obligatoire</span>
+                   </label>
+                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                     <span style={{ color: "#333", fontSize: "14px" }}>Expiration de session après</span>
+                     <input
+                       type="number"
+                       min="1"
+                       value={securitySettings.sessionTimeout}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, sessionTimeout: parseInt(e.target.value) || 30 })}
+                       style={{
+                         width: "80px",
+                         padding: "8px 12px",
+                         border: "1px solid #ddd",
+                         borderRadius: "4px",
+                         fontSize: "14px",
+                         textAlign: "center"
+                       }}
+                     />
+                     <span style={{ color: "#007bff", fontSize: "14px", fontWeight: "500" }}>{securitySettings.sessionTimeout}</span>
+                     <span style={{ color: "#333", fontSize: "14px" }}>minutes d'inactivité</span>
+                   </div>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.connectionHistory}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, connectionHistory: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Historique des connexions</span>
+                   </label>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.suspiciousConnectionAlerts}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, suspiciousConnectionAlerts: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Alertes de connexion suspecte</span>
+                   </label>
+                 </div>
+               </div>
+
+               {/* Section Mot de Passe */}
+               <div style={{ 
+                 marginBottom: "32px", 
+                 border: "1px solid #ddd", 
+                 borderRadius: "8px", 
+                 padding: "24px",
+                 background: "white"
+               }}>
+                 <h3 style={{ marginBottom: "20px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                   Mot de Passe
+                 </h3>
+                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                     <span style={{ color: "#007bff", fontSize: "14px", fontWeight: "500", minWidth: "180px" }}>Longueur minimale :</span>
+                     <input
+                       type="number"
+                       min="1"
+                       value={securitySettings.minPasswordLength}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, minPasswordLength: parseInt(e.target.value) || 8 })}
+                       style={{
+                         width: "80px",
+                         padding: "8px 12px",
+                         border: "1px solid #ddd",
+                         borderRadius: "4px",
+                         fontSize: "14px",
+                         textAlign: "center"
+                       }}
+                     />
+                     <span style={{ color: "#007bff", fontSize: "14px", fontWeight: "500" }}>{securitySettings.minPasswordLength}</span>
+                     <span style={{ color: "#333", fontSize: "14px" }}>caractères</span>
+                   </div>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.requireUppercase}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, requireUppercase: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Exiger des majuscules</span>
+                   </label>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.requireLowercase}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, requireLowercase: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Exiger des minuscules</span>
+                   </label>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.requireNumbers}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, requireNumbers: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Exiger des chiffres</span>
+                   </label>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.requireSpecialChars}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, requireSpecialChars: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Exiger des caractères spéciaux</span>
+                   </label>
+                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                     <span style={{ color: "#007bff", fontSize: "14px", fontWeight: "500", minWidth: "180px" }}>Expiration du mot de passe :</span>
+                     <input
+                       type="number"
+                       min="1"
+                       value={securitySettings.passwordExpiration}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, passwordExpiration: parseInt(e.target.value) || 90 })}
+                       style={{
+                         width: "80px",
+                         padding: "8px 12px",
+                         border: "1px solid #ddd",
+                         borderRadius: "4px",
+                         fontSize: "14px",
+                         textAlign: "center"
+                       }}
+                     />
+                     <span style={{ color: "#007bff", fontSize: "14px", fontWeight: "500" }}>{securitySettings.passwordExpiration}</span>
+                     <span style={{ color: "#333", fontSize: "14px" }}>jours</span>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Section Audit et Logging */}
+               <div style={{ 
+                 marginBottom: "32px", 
+                 border: "1px solid #ddd", 
+                 borderRadius: "8px", 
+                 padding: "24px",
+                 background: "white"
+               }}>
+                 <h3 style={{ marginBottom: "20px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                   Audit et Logging
+                 </h3>
+                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.recordAllActions}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, recordAllActions: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Enregistrer toutes les actions</span>
+                   </label>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.recordSensitiveDataChanges}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, recordSensitiveDataChanges: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Enregistrer les modifications de données sensibles</span>
+                   </label>
+                   <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={securitySettings.recordFailedLogins}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, recordFailedLogins: e.target.checked })}
+                       style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                     />
+                     <span style={{ color: "#333", fontSize: "14px" }}>Enregistrer les tentatives de connexion échouées</span>
+                   </label>
+                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                     <span style={{ color: "#007bff", fontSize: "14px", fontWeight: "500", minWidth: "200px" }}>Conserver les logs pendant :</span>
+                     <input
+                       type="number"
+                       min="1"
+                       value={securitySettings.keepLogsFor}
+                       onChange={(e) => setSecuritySettings({ ...securitySettings, keepLogsFor: parseInt(e.target.value) || 90 })}
+                       style={{
+                         width: "80px",
+                         padding: "8px 12px",
+                         border: "1px solid #ddd",
+                         borderRadius: "4px",
+                         fontSize: "14px",
+                         textAlign: "center"
+                       }}
+                     />
+                     <span style={{ color: "#007bff", fontSize: "14px", fontWeight: "500" }}>{securitySettings.keepLogsFor}</span>
+                     <span style={{ color: "#333", fontSize: "14px" }}>jours</span>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Boutons d'action */}
+               <div style={{ 
+                 display: "flex", 
+                 justifyContent: "flex-end", 
+                 gap: "12px",
+                 marginTop: "32px",
+                 paddingTop: "24px",
+                 borderTop: "1px solid #eee"
+               }}>
+                 <button
+                   onClick={handleCancelSecurity}
+                   style={{
+                     padding: "10px 20px",
+                     backgroundColor: "#6c757d",
+                     color: "white",
+                     border: "none",
+                     borderRadius: "4px",
+                     cursor: "pointer",
+                     fontSize: "14px"
+                   }}
+                 >
+                   [Annuler]
+                 </button>
+                 <button
+                   onClick={handleSaveSecurity}
+                   style={{
+                     padding: "10px 20px",
+                     backgroundColor: "#28a745",
+                     color: "white",
+                     border: "none",
+                     borderRadius: "4px",
+                     cursor: "pointer",
+                     fontSize: "14px"
+                   }}
+                 >
+                   [Enregistrer]
+                 </button>
+               </div>
+             </div>
+           )}
+
+           {activeSection === "rapports-settings" && (
+             <div style={{ padding: "24px" }}>
+               <h1 style={{ marginBottom: "32px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
+                 Rapports
+               </h1>
+
+               {/* Section Types de Rapports */}
+               <div style={{ 
+                 marginBottom: "32px", 
+                 border: "1px solid #ddd", 
+                 borderRadius: "8px", 
+                 padding: "24px",
+                 background: "white"
+               }}>
+                 <h3 style={{ marginBottom: "20px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                   Types de Rapports :
+                 </h3>
+                 <div style={{ display: "flex", flexDirection: "column", gap: "20px", paddingLeft: "8px" }}>
+                   {/* Rapports de Performance */}
+                   <div 
+                     onClick={() => {
+                       setSelectedReportType("performance");
+                       alert("Génération du rapport de performance (à implémenter)");
+                     }}
+                     style={{ 
+                       display: "flex", 
+                       alignItems: "center", 
+                       gap: "12px", 
+                       position: "relative",
+                       cursor: "pointer",
+                       padding: "8px",
+                       borderRadius: "4px",
+                       transition: "background 0.2s",
+                       background: selectedReportType === "performance" ? "#f0f8ff" : "transparent"
+                     }}
+                     onMouseEnter={(e) => {
+                       if (selectedReportType !== "performance") {
+                         e.currentTarget.style.background = "#f8f9fa";
+                       }
+                     }}
+                     onMouseLeave={(e) => {
+                       if (selectedReportType !== "performance") {
+                         e.currentTarget.style.background = "transparent";
+                       }
+                     }}
+                   >
+                     <div style={{ position: "relative", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                       <div style={{ position: "absolute", left: "-8px", top: "50%", width: "8px", height: "2px", background: "#007bff", transform: "translateY(-50%)" }}></div>
+                       <div style={{ position: "absolute", left: "0", top: "0", width: "2px", height: "16px", background: "#007bff" }}></div>
+                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ position: "relative", zIndex: 1 }}>
+                         <rect x="3" y="12" width="4" height="8" fill="#007bff"/>
+                         <rect x="9" y="8" width="4" height="12" fill="#28a745"/>
+                         <line x1="3" y1="20" x2="19" y2="20" stroke="#333" strokeWidth="2"/>
+                         <line x1="3" y1="20" x2="3" y2="12" stroke="#333" strokeWidth="2"/>
+                       </svg>
+                     </div>
+                     <span style={{ color: "#333", fontSize: "14px" }}>Rapports de Performance</span>
+                   </div>
+
+                   {/* Rapports Utilisateurs */}
+                   <div 
+                     onClick={() => {
+                       setSelectedReportType("utilisateurs");
+                       alert("Génération du rapport utilisateurs (à implémenter)");
+                     }}
+                     style={{ 
+                       display: "flex", 
+                       alignItems: "center", 
+                       gap: "12px", 
+                       position: "relative",
+                       cursor: "pointer",
+                       padding: "8px",
+                       borderRadius: "4px",
+                       transition: "background 0.2s",
+                       background: selectedReportType === "utilisateurs" ? "#f0f8ff" : "transparent"
+                     }}
+                     onMouseEnter={(e) => {
+                       if (selectedReportType !== "utilisateurs") {
+                         e.currentTarget.style.background = "#f8f9fa";
+                       }
+                     }}
+                     onMouseLeave={(e) => {
+                       if (selectedReportType !== "utilisateurs") {
+                         e.currentTarget.style.background = "transparent";
+                       }
+                     }}
+                   >
+                     <div style={{ position: "relative", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                       <div style={{ position: "absolute", left: "-8px", top: "50%", width: "8px", height: "2px", background: "#007bff", transform: "translateY(-50%)" }}></div>
+                       <div style={{ position: "absolute", left: "0", top: "0", width: "2px", height: "32px", background: "#007bff" }}></div>
+                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ position: "relative", zIndex: 1 }}>
+                         <circle cx="12" cy="8" r="3" fill="#007bff"/>
+                         <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" stroke="#007bff" strokeWidth="2"/>
+                         <circle cx="20" cy="8" r="3" fill="#007bff"/>
+                         <path d="M18 21v-2a4 4 0 0 1 4-4h2" stroke="#007bff" strokeWidth="2"/>
+                       </svg>
+                     </div>
+                     <span style={{ color: "#333", fontSize: "14px" }}>Rapports Utilisateurs</span>
+                   </div>
+
+                   {/* Rapports Tickets */}
+                   <div 
+                     onClick={() => {
+                       setSelectedReportType("tickets");
+                       alert("Génération du rapport tickets (à implémenter)");
+                     }}
+                     style={{ 
+                       display: "flex", 
+                       alignItems: "center", 
+                       gap: "12px", 
+                       position: "relative",
+                       cursor: "pointer",
+                       padding: "8px",
+                       borderRadius: "4px",
+                       transition: "background 0.2s",
+                       background: selectedReportType === "tickets" ? "#f0f8ff" : "transparent"
+                     }}
+                     onMouseEnter={(e) => {
+                       if (selectedReportType !== "tickets") {
+                         e.currentTarget.style.background = "#f8f9fa";
+                       }
+                     }}
+                     onMouseLeave={(e) => {
+                       if (selectedReportType !== "tickets") {
+                         e.currentTarget.style.background = "transparent";
+                       }
+                     }}
+                   >
+                     <div style={{ position: "relative", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                       <div style={{ position: "absolute", left: "-8px", top: "50%", width: "8px", height: "2px", background: "#007bff", transform: "translateY(-50%)" }}></div>
+                       <div style={{ position: "absolute", left: "0", top: "0", width: "2px", height: "32px", background: "#007bff" }}></div>
+                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ position: "relative", zIndex: 1 }}>
+                         <rect x="4" y="6" width="16" height="12" rx="2" fill="#ffc107" stroke="#333" strokeWidth="1.5"/>
+                         <line x1="8" y1="10" x2="16" y2="10" stroke="#333" strokeWidth="1.5"/>
+                       </svg>
+                     </div>
+                     <span style={{ color: "#333", fontSize: "14px" }}>Rapports Tickets</span>
+                   </div>
+
+                   {/* Rapports Techniciens */}
+                   <div 
+                     onClick={() => {
+                       setSelectedReportType("techniciens");
+                       alert("Génération du rapport techniciens (à implémenter)");
+                     }}
+                     style={{ 
+                       display: "flex", 
+                       alignItems: "center", 
+                       gap: "12px", 
+                       position: "relative",
+                       cursor: "pointer",
+                       padding: "8px",
+                       borderRadius: "4px",
+                       transition: "background 0.2s",
+                       background: selectedReportType === "techniciens" ? "#f0f8ff" : "transparent"
+                     }}
+                     onMouseEnter={(e) => {
+                       if (selectedReportType !== "techniciens") {
+                         e.currentTarget.style.background = "#f8f9fa";
+                       }
+                     }}
+                     onMouseLeave={(e) => {
+                       if (selectedReportType !== "techniciens") {
+                         e.currentTarget.style.background = "transparent";
+                       }
+                     }}
+                   >
+                     <div style={{ position: "relative", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                       <div style={{ position: "absolute", left: "-8px", top: "50%", width: "8px", height: "2px", background: "#007bff", transform: "translateY(-50%)" }}></div>
+                       <div style={{ position: "absolute", left: "0", top: "0", width: "2px", height: "32px", background: "#007bff" }}></div>
+                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ position: "relative", zIndex: 1 }}>
+                         <polyline points="3 17 7 13 12 18 21 9" stroke="#dc3545" strokeWidth="2" fill="none"/>
+                         <polyline points="12 18 12 3" stroke="#28a745" strokeWidth="2" fill="none"/>
+                         <path d="M3 17l4-4 5 5 9-9" stroke="#28a745" strokeWidth="2" fill="none"/>
+                       </svg>
+                     </div>
+                     <span style={{ color: "#333", fontSize: "14px" }}>Rapports Techniciens</span>
+                   </div>
+
+                   {/* Audit et Logs */}
+                   <div 
+                     onClick={() => {
+                       setSelectedReportType("audit");
+                       alert("Génération du rapport audit et logs (à implémenter)");
+                     }}
+                     style={{ 
+                       display: "flex", 
+                       alignItems: "center", 
+                       gap: "12px", 
+                       position: "relative",
+                       cursor: "pointer",
+                       padding: "8px",
+                       borderRadius: "4px",
+                       transition: "background 0.2s",
+                       background: selectedReportType === "audit" ? "#f0f8ff" : "transparent"
+                     }}
+                     onMouseEnter={(e) => {
+                       if (selectedReportType !== "audit") {
+                         e.currentTarget.style.background = "#f8f9fa";
+                       }
+                     }}
+                     onMouseLeave={(e) => {
+                       if (selectedReportType !== "audit") {
+                         e.currentTarget.style.background = "transparent";
+                       }
+                     }}
+                   >
+                     <div style={{ position: "relative", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                       <div style={{ position: "absolute", left: "-8px", top: "50%", width: "8px", height: "2px", background: "#007bff", transform: "translateY(-50%)" }}></div>
+                       <div style={{ position: "absolute", left: "0", top: "0", width: "2px", height: "16px", background: "#007bff" }}></div>
+                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ position: "relative", zIndex: 1 }}>
+                         <circle cx="11" cy="11" r="8" stroke="#007bff" strokeWidth="2" fill="none"/>
+                         <path d="M21 21l-4.35-4.35" stroke="#007bff" strokeWidth="2"/>
+                       </svg>
+                     </div>
+                     <span style={{ color: "#333", fontSize: "14px" }}>Audit et Logs</span>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Section Rapports Récents */}
+               <div style={{ 
+                 marginBottom: "32px", 
+                 border: "1px solid #ddd", 
+                 borderRadius: "8px", 
+                 padding: "24px",
+                 background: "white"
+               }}>
+                 <h3 style={{ marginBottom: "20px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                   Rapports Récents :
+                 </h3>
+                 <div style={{ 
+                   border: "1px solid #007bff", 
+                   borderRadius: "4px",
+                   overflow: "hidden"
+                 }}>
+                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                     <thead>
+                       <tr style={{ background: "#f8f9fa" }}>
+                         <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #007bff", borderRight: "1px solid #007bff" }}>Rapport</th>
+                         <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #007bff", borderRight: "1px solid #007bff" }}>Généré par</th>
+                         <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #007bff", borderRight: "1px solid #007bff" }}>Date</th>
+                         <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", color: "#333", borderBottom: "1px solid #007bff" }}>Actions</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {recentReports.map((report) => (
+                         <tr key={report.id} style={{ borderBottom: "1px solid #007bff" }}>
+                           <td style={{ padding: "12px 16px", borderRight: "1px solid #007bff" }}>
+                             {report.report === "Performance Janvier 2024" ? (
+                               <>
+                                 <span style={{ color: "#333" }}>Performance</span>{" "}
+                                 <span style={{ color: "#007bff" }}>Janvier 2024</span>
+                               </>
+                             ) : (
+                               <span style={{ color: "#333" }}>{report.report}</span>
+                             )}
+                           </td>
+                           <td style={{ padding: "12px 16px", color: "#333", borderRight: "1px solid #007bff" }}>{report.generatedBy}</td>
+                           <td style={{ padding: "12px 16px", color: "#007bff", borderRight: "1px solid #007bff" }}>{report.date}</td>
+                           <td style={{ padding: "12px 16px" }}>
+                             <div style={{ display: "flex", gap: "12px" }}>
+                               <button
+                                 style={{
+                                   padding: "0",
+                                   backgroundColor: "transparent",
+                                   border: "none",
+                                   cursor: "pointer",
+                                   display: "flex",
+                                   alignItems: "center",
+                                   justifyContent: "center",
+                                   width: "24px",
+                                   height: "24px"
+                                 }}
+                                 title="Voir"
+                               >
+                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#007bff" strokeWidth="2">
+                                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                   <circle cx="12" cy="12" r="3"/>
+                                 </svg>
+                               </button>
+                               <button
+                                 style={{
+                                   padding: "0",
+                                   backgroundColor: "transparent",
+                                   border: "none",
+                                   cursor: "pointer",
+                                   display: "flex",
+                                   alignItems: "center",
+                                   justifyContent: "center",
+                                   width: "24px",
+                                   height: "24px"
+                                 }}
+                                 title="Télécharger"
+                               >
+                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b4513" strokeWidth="2">
+                                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                   <polyline points="7 10 12 15 17 10"/>
+                                   <line x1="12" y1="15" x2="12" y2="3"/>
+                                 </svg>
+                               </button>
+                             </div>
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+
+               {/* Bouton Générer un nouveau rapport */}
+               <div style={{ marginBottom: "24px" }}>
+                 <button
+                   onClick={() => {
+                     alert("Génération d'un nouveau rapport (à implémenter)");
+                   }}
+                   style={{
+                     padding: "10px 20px",
+                     backgroundColor: "transparent",
+                     color: "#333",
+                     border: "none",
+                     borderRadius: "4px",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: "500"
+                   }}
+                 >
+                   [+ Générer un nouveau rapport]
+                 </button>
+               </div>
+             </div>
+           )}
+
          </div>
        </div>
 
