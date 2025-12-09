@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas
 from ..database import get_db
 from ..security import get_current_user, require_role
+from ..email_service import email_service
 
 router = APIRouter()
 
@@ -40,24 +41,44 @@ def create_ticket(
     db.commit()
     db.refresh(ticket)
     
-    # Créer une notification pour les Secrétaires/Adjoints DSI
-    secretary_role = db.query(models.Role).filter(models.Role.name.in_(["Secrétaire DSI", "Adjoint DSI"])).all()
-    if secretary_role:
-        for role in secretary_role:
-            secretaries = db.query(models.User).filter(
+    # Créer une notification pour les Secrétaires/Adjoints DSI et DSI
+    # Récupérer tous les utilisateurs concernés (Secrétaire DSI, Adjoint DSI, DSI)
+    target_roles = db.query(models.Role).filter(
+        models.Role.name.in_(["Secrétaire DSI", "Adjoint DSI", "DSI"])
+    ).all()
+    
+    recipient_emails = []
+    if target_roles:
+        for role in target_roles:
+            users = db.query(models.User).filter(
                 models.User.role_id == role.id,
                 models.User.status == "actif"
             ).all()
-            for secretary in secretaries:
+            for user in users:
+                # Créer une notification dans la base de données
                 notification = models.Notification(
-                    user_id=secretary.id,
+                    user_id=user.id,
                     type=models.NotificationType.NOUVEAU_TICKET,
                     ticket_id=ticket.id,
                     message=f"Nouveau ticket #{ticket.number} créé: {ticket.title}",
                     read=False
                 )
                 db.add(notification)
+                
+                # Ajouter l'email à la liste des destinataires (si email valide)
+                if user.email and user.email.strip():
+                    recipient_emails.append(user.email)
+        
         db.commit()
+        
+        # Envoyer un email de notification à tous les destinataires
+        if recipient_emails:
+            email_service.send_ticket_created_notification(
+                ticket_number=ticket.number,
+                ticket_title=ticket.title,
+                creator_name=current_user.full_name,
+                recipient_emails=list(set(recipient_emails))  # Supprimer les doublons
+            )
     
     # Charger les relations pour la réponse
     ticket = (
@@ -221,8 +242,29 @@ def assign_ticket(
     )
     db.add(notification)
     
+    # Créer une notification pour le créateur du ticket
+    creator_notification = models.Notification(
+        user_id=ticket.creator_id,
+        type=models.NotificationType.TICKET_ASSIGNE,
+        ticket_id=ticket.id,
+        message=f"Votre ticket #{ticket.number} a été assigné à un technicien: {ticket.title}",
+        read=False
+    )
+    db.add(creator_notification)
+    
     db.commit()
     db.refresh(ticket)
+    
+    # Envoyer un email de notification au technicien
+    if technician.email and technician.email.strip():
+        email_service.send_ticket_assigned_notification(
+            ticket_number=ticket.number,
+            ticket_title=ticket.title,
+            technician_email=technician.email,
+            technician_name=technician.full_name,
+            priority=ticket.priority,
+            notes=assign_data.notes
+        )
     
     # Charger les relations pour la réponse
     ticket = (
@@ -295,8 +337,52 @@ def reassign_ticket(
         reason=f"Réassigné depuis {old_technician_id} vers {assign_data.technician_id}. {assign_data.reason or ''}",
     )
     db.add(history)
+    
+    # Créer une notification pour le nouveau technicien
+    notification = models.Notification(
+        user_id=assign_data.technician_id,
+        type=models.NotificationType.ASSIGNATION,
+        ticket_id=ticket.id,
+        message=f"Le ticket #{ticket.number} vous a été réassigné: {ticket.title}",
+        read=False
+    )
+    db.add(notification)
+    
+    # Créer une notification pour l'ancien technicien
+    old_technician = db.query(models.User).filter(models.User.id == old_technician_id).first()
+    if old_technician:
+        old_notification = models.Notification(
+            user_id=old_technician_id,
+            type=models.NotificationType.REASSIGNATION,
+            ticket_id=ticket.id,
+            message=f"Le ticket #{ticket.number} a été réassigné à un autre technicien: {ticket.title}",
+            read=False
+        )
+        db.add(old_notification)
+    
+    # Créer une notification pour le créateur du ticket
+    creator_notification = models.Notification(
+        user_id=ticket.creator_id,
+        type=models.NotificationType.TICKET_ASSIGNE,
+        ticket_id=ticket.id,
+        message=f"Votre ticket #{ticket.number} a été réassigné à un autre technicien: {ticket.title}",
+        read=False
+    )
+    db.add(creator_notification)
+    
     db.commit()
     db.refresh(ticket)
+    
+    # Envoyer un email de notification au nouveau technicien
+    if technician.email and technician.email.strip():
+        email_service.send_ticket_assigned_notification(
+            ticket_number=ticket.number,
+            ticket_title=ticket.title,
+            technician_email=technician.email,
+            technician_name=technician.full_name,
+            priority=ticket.priority,
+            notes=assign_data.notes or assign_data.reason
+        )
     
     # Charger les relations pour la réponse
     ticket = (
@@ -354,6 +440,50 @@ def escalate_ticket(
         reason=f"Ticket escaladé : priorité passée de {old_priority} à {ticket.priority}",
     )
     db.add(history)
+    
+    # Créer des notifications pour DSI et Adjoints DSI
+    dsi_roles = db.query(models.Role).filter(
+        models.Role.name.in_(["DSI", "Adjoint DSI"])
+    ).all()
+    
+    for role in dsi_roles:
+        dsi_users = db.query(models.User).filter(
+            models.User.role_id == role.id,
+            models.User.status == "actif"
+        ).all()
+        for dsi_user in dsi_users:
+            # Ne pas notifier l'utilisateur qui a escaladé
+            if dsi_user.id != current_user.id:
+                escalation_notification = models.Notification(
+                    user_id=dsi_user.id,
+                    type=models.NotificationType.ESCALADE,
+                    ticket_id=ticket.id,
+                    message=f"Ticket #{ticket.number} escaladé à la priorité {ticket.priority}: {ticket.title}",
+                    read=False
+                )
+                db.add(escalation_notification)
+    
+    # Notifier aussi le technicien assigné s'il existe
+    if ticket.technician_id:
+        tech_notification = models.Notification(
+            user_id=ticket.technician_id,
+            type=models.NotificationType.ESCALADE,
+            ticket_id=ticket.id,
+            message=f"Le ticket #{ticket.number} que vous avez en charge a été escaladé à la priorité {ticket.priority}: {ticket.title}",
+            read=False
+        )
+        db.add(tech_notification)
+    
+    # Notifier le créateur du ticket
+    creator_notification = models.Notification(
+        user_id=ticket.creator_id,
+        type=models.NotificationType.ESCALADE,
+        ticket_id=ticket.id,
+        message=f"Votre ticket #{ticket.number} a été escaladé à la priorité {ticket.priority}: {ticket.title}",
+        read=False
+    )
+    db.add(creator_notification)
+    
     db.commit()
     db.refresh(ticket)
     
@@ -412,6 +542,27 @@ def update_ticket_status(
                 detail="Only agents can close tickets"
             )
         ticket.closed_at = datetime.utcnow()
+        
+        # Créer une notification pour le créateur du ticket
+        creator_notification = models.Notification(
+            user_id=ticket.creator_id,
+            type=models.NotificationType.TICKET_CLOTURE,
+            ticket_id=ticket.id,
+            message=f"Votre ticket #{ticket.number} a été clôturé: {ticket.title}",
+            read=False
+        )
+        db.add(creator_notification)
+        
+        # Créer une notification pour le technicien assigné s'il existe
+        if ticket.technician_id:
+            tech_notification = models.Notification(
+                user_id=ticket.technician_id,
+                type=models.NotificationType.TICKET_CLOTURE,
+                ticket_id=ticket.id,
+                message=f"Le ticket #{ticket.number} que vous avez résolu a été clôturé: {ticket.title}",
+                read=False
+            )
+            db.add(tech_notification)
     elif status_update.status == models.TicketStatus.EN_COURS:
         # Le technicien assigné peut mettre en cours
         if ticket.technician_id != current_user.id:
@@ -536,20 +687,47 @@ def validate_ticket_resolution(
         # Utilisateur valide → Clôturer
         ticket.status = models.TicketStatus.CLOTURE
         ticket.closed_at = datetime.utcnow()
+        history_reason = "Validation utilisateur: Validé"
+        
+        # Créer une notification pour le technicien assigné
+        if ticket.technician_id:
+            validation_notification = models.Notification(
+                user_id=ticket.technician_id,
+                type=models.NotificationType.TICKET_CLOTURE,
+                ticket_id=ticket.id,
+                message=f"Votre résolution du ticket #{ticket.number} a été validée par l'utilisateur: {ticket.title}",
+                read=False
+            )
+            db.add(validation_notification)
     else:
         # Utilisateur rejette → Rejeter
         ticket.status = models.TicketStatus.REJETE
         
-        # Notifier le technicien assigné
+        # Vérifier que le motif de rejet est fourni
+        if not validation.rejection_reason or not validation.rejection_reason.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Un motif de rejet est requis"
+            )
+        
+        # Construire le message avec le motif
+        rejection_message = f"L'utilisateur a rejeté la résolution du ticket #{ticket.number}."
+        if validation.rejection_reason:
+            rejection_message += f" Motif: {validation.rejection_reason}"
+        
+        # Notifier le technicien assigné avec le motif
         if ticket.technician_id:
             notification = models.Notification(
                 user_id=ticket.technician_id,
-                type=models.NotificationType.RESOLUTION,
+                type=models.NotificationType.REJET_RESOLUTION,
                 ticket_id=ticket.id,
-                message=f"L'utilisateur a rejeté la résolution du ticket #{ticket.number}. Veuillez continuer l'investigation.",
+                message=rejection_message,
                 read=False
             )
             db.add(notification)
+        
+        # Construire la raison pour l'historique avec le motif
+        history_reason = f"Validation utilisateur: Rejeté. Motif: {validation.rejection_reason}"
     
     # Créer une entrée d'historique
     history = models.TicketHistory(
@@ -557,7 +735,7 @@ def validate_ticket_resolution(
         old_status=old_status,
         new_status=ticket.status,
         user_id=current_user.id,
-        reason=f"Validation utilisateur: {'Validé' if validation.validated else 'Rejeté'}"
+        reason=history_reason
     )
     db.add(history)
     db.commit()
@@ -811,3 +989,36 @@ def reopen_ticket(
         .first()
     )
     return ticket
+
+
+@router.get("/{ticket_id}/history", response_model=List[schemas.TicketHistoryRead])
+def get_ticket_history(
+    ticket_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Récupérer l'historique d'un ticket"""
+    ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found"
+        )
+    
+    # Vérifier les permissions : créateur, technicien assigné, ou agent/DSI
+    is_creator = ticket.creator_id == current_user.id
+    is_assigned_tech = ticket.technician_id == current_user.id
+    is_agent = current_user.role and current_user.role.name in ["Secrétaire DSI", "Adjoint DSI", "DSI", "Admin"]
+    
+    if not (is_creator or is_assigned_tech or is_agent):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
+    
+    history = (
+        db.query(models.TicketHistory)
+        .filter(models.TicketHistory.ticket_id == ticket_id)
+        .order_by(models.TicketHistory.changed_at.desc())
+        .all()
+    )
+    
+    return history

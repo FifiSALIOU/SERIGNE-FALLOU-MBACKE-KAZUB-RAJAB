@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -76,5 +77,15 @@ def get_current_user_info(
     if current_user.role_id:
         current_user.role = db.query(models.Role).filter(models.Role.id == current_user.role_id).first()
     return current_user
+
+
+@router.get("/roles", response_model=List[schemas.RoleRead])
+def list_roles(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Liste tous les rôles disponibles"""
+    roles = db.query(models.Role).all()
+    return roles
 
 

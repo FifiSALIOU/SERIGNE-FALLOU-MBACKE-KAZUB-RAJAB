@@ -32,13 +32,28 @@ class UserCreate(UserBase):
     role_id: UUID
 
 
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    agency: Optional[str] = None
+    phone: Optional[str] = None
+    role_id: Optional[UUID] = None
+    status: Optional[str] = None
+    specialization: Optional[str] = None
+
+
 class UserRead(UserBase):
     id: UUID
     role: RoleRead
     status: str
+    specialization: Optional[str] = None  # Spécialisation : "materiel" ou "applicatif"
 
     class Config:
         from_attributes = True
+
+
+class PasswordReset(BaseModel):
+    new_password: Optional[str] = None  # Si None, génère un mot de passe aléatoire
 
 
 class TicketBase(BaseModel):
@@ -114,6 +129,7 @@ class TokenData(BaseModel):
 class TicketValidation(BaseModel):
     """Schéma pour la validation utilisateur d'un ticket résolu"""
     validated: bool  # True = valide (clôture), False = rejette (rejete)
+    rejection_reason: Optional[str] = None  # Motif de rejet (obligatoire si validated=False)
 
 
 class TicketFeedback(BaseModel):
@@ -140,6 +156,20 @@ class NotificationRead(BaseModel):
     read: bool
     created_at: datetime
     read_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TicketHistoryRead(BaseModel):
+    """Schéma pour lire l'historique d'un ticket"""
+    id: UUID
+    ticket_id: UUID
+    old_status: Optional[str] = None
+    new_status: str
+    user_id: UUID
+    reason: Optional[str] = None
+    changed_at: datetime
 
     class Config:
         from_attributes = True

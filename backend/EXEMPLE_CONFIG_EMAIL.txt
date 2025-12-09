@@ -1,0 +1,21 @@
+# Configuration SMTP pour l'envoi d'emails
+EMAIL_ENABLED=true
+
+# Serveur SMTP
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+
+# Authentification SMTP
+# Utilisez la même adresse email que SENDER_EMAIL
+SMTP_USERNAME=csstickets7@gmail.com
+SMTP_PASSWORD=votre-mot-de-passe-application-ici
+
+# Expéditeur
+# C'est la même adresse que SMTP_USERNAME dans votre cas
+SENDER_EMAIL=csstickets7@gmail.com
+SENDER_NAME=Système de Gestion des Tickets
+
+# Options de sécurité
+USE_TLS=true
+VERIFY_SSL=true
+

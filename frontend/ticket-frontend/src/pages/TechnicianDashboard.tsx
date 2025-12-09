@@ -724,7 +724,9 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                       borderRadius: "4px",
                       fontSize: "12px",
                       background: "#e3f2fd",
-                      color: "#1976d2"
+                      color: "#1976d2",
+                      whiteSpace: "nowrap",
+                      display: "inline-block"
                     }}>
                       Assigné
                     </span>
@@ -786,7 +788,9 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                       borderRadius: "4px",
                       fontSize: "12px",
                       background: "#fff3e0",
-                      color: "#f57c00"
+                      color: "#f57c00",
+                      whiteSpace: "nowrap",
+                      display: "inline-block"
                     }}>
                       En cours
                     </span>
@@ -873,7 +877,9 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                                 fontSize: "12px",
                                 fontWeight: "500",
                                 background: t.status === "resolu" ? "#28a745" : "#6c757d",
-                                color: "white"
+                                color: "white",
+                                whiteSpace: "nowrap",
+                                display: "inline-block"
                               }}>
                                 {t.status === "resolu" ? "Résolu" : t.status === "cloture" ? "Clôturé" : t.status}
                               </span>

@@ -44,10 +44,15 @@ def create_test_users():
                 password_hash=get_password_hash("tech123"),
                 role_id=tech_role.id,
                 agency="Agence IT",
-                status="actif"
+                status="actif",
+                specialization="materiel"
             )
             db.add(tech1)
-            print("OK - Technicien cree: tech1 (password: tech123)")
+            print("OK - Technicien cree: tech1 (password: tech123, specialisation: materiel)")
+        elif not existing_tech1.specialization:
+            # Mettre à jour la spécialisation si elle n'existe pas
+            existing_tech1.specialization = "materiel"
+            print("OK - Specialisation mise a jour pour tech1: materiel")
         
         # Créer un technicien applicatif
         existing_tech2 = db.query(models.User).filter(models.User.username == "tech2").first()
@@ -59,10 +64,15 @@ def create_test_users():
                 password_hash=get_password_hash("tech123"),
                 role_id=tech_role.id,
                 agency="Agence IT",
-                status="actif"
+                status="actif",
+                specialization="applicatif"
             )
             db.add(tech2)
-            print("OK - Technicien cree: tech2 (password: tech123)")
+            print("OK - Technicien cree: tech2 (password: tech123, specialisation: applicatif)")
+        elif not existing_tech2.specialization:
+            # Mettre à jour la spécialisation si elle n'existe pas
+            existing_tech2.specialization = "applicatif"
+            print("OK - Specialisation mise a jour pour tech2: applicatif")
         
         # Créer une secrétaire DSI
         existing_sec = db.query(models.User).filter(models.User.username == "secretary1").first()

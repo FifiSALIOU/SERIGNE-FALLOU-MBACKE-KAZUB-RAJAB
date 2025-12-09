@@ -17,6 +17,7 @@ interface Ticket {
   user_agency: string | null;  // Agence de l'utilisateur créateur
   priority: string;
   status: string;
+  type: string;  // "materiel" ou "applicatif"
   technician_id: string | null;
 }
 
@@ -50,6 +51,10 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
   const [selectedTechnician, setSelectedTechnician] = useState<string>("");
   const [assignmentNotes, setAssignmentNotes] = useState<string>("");
+  const [reopenTicketId, setReopenTicketId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>("");
+  const [loadingRejectionReason, setLoadingRejectionReason] = useState<boolean>(false);
+  const [showReopenModal, setShowReopenModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [roleName, setRoleName] = useState<string>("");
   const [activeSection, setActiveSection] = useState<string>("dashboard");
@@ -258,6 +263,24 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
     }
   }, [showGenerateReport, showOutputFormat]);
 
+  // Fonction pour filtrer les techniciens selon le type du ticket
+  function getFilteredTechnicians(ticketType: string): Technician[] {
+    if (!ticketType) return technicians;
+    
+    // Si le ticket est de type "materiel", afficher uniquement les techniciens matériel
+    if (ticketType === "materiel") {
+      return technicians.filter(tech => tech.specialization === "materiel");
+    }
+    
+    // Si le ticket est de type "applicatif", afficher uniquement les techniciens applicatif
+    if (ticketType === "applicatif") {
+      return technicians.filter(tech => tech.specialization === "applicatif");
+    }
+    
+    // Par défaut, retourner tous les techniciens
+    return technicians;
+  }
+
   async function handleAssign(ticketId: string) {
     if (!selectedTechnician) {
       alert("Veuillez sélectionner un technicien");
@@ -426,13 +449,65 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
     }
   }
 
+  async function loadRejectionReason(ticketId: string) {
+    try {
+      const res = await fetch(`http://localhost:8000/tickets/${ticketId}/history`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const history = await res.json();
+        console.log("Historique du ticket:", history); // Debug
+        // Trouver l'entrée d'historique correspondant au rejet
+        const rejectionEntry = history.find((h: any) => 
+          h.new_status === "rejete" && h.reason && (
+            h.reason.includes("Validation utilisateur: Rejeté") || 
+            h.reason.includes("Rejeté")
+          )
+        );
+        console.log("Entrée de rejet trouvée:", rejectionEntry); // Debug
+        if (rejectionEntry && rejectionEntry.reason) {
+          // Extraire le motif du format "Validation utilisateur: Rejeté. Motif: [motif]"
+          const match = rejectionEntry.reason.match(/Motif:\s*(.+)/);
+          const extractedReason = match ? match[1].trim() : rejectionEntry.reason;
+          console.log("Motif extrait:", extractedReason); // Debug
+          return extractedReason;
+        }
+      } else {
+        console.error("Erreur HTTP:", res.status, res.statusText);
+      }
+      return "Motif non disponible";
+    } catch (err) {
+      console.error("Erreur chargement historique:", err);
+      return "Erreur lors du chargement du motif";
+    }
+  }
+
+  async function handleReopenClick(ticketId: string) {
+    setReopenTicketId(ticketId);
+    setShowReopenModal(true);
+    setSelectedTechnician("");
+    setAssignmentNotes("");
+    setRejectionReason("");
+    setLoadingRejectionReason(true);
+    
+    try {
+      const reason = await loadRejectionReason(ticketId);
+      setRejectionReason(reason);
+    } catch (err) {
+      console.error("Erreur:", err);
+      setRejectionReason("Erreur lors du chargement du motif de rejet");
+    } finally {
+      setLoadingRejectionReason(false);
+    }
+  }
+
   async function handleReopen(ticketId: string) {
     if (!selectedTechnician) {
       alert("Veuillez sélectionner un technicien pour la réouverture");
       return;
     }
-
-    if (!confirm("Êtes-vous sûr de vouloir réouvrir ce ticket et le réassigner ?")) return;
 
     setLoading(true);
     try {
@@ -444,7 +519,7 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
         },
         body: JSON.stringify({
           technician_id: selectedTechnician,
-          reason: "Réouverture après rejet utilisateur",
+          reason: assignmentNotes || "Réouverture après rejet utilisateur",
         }),
       });
 
@@ -460,6 +535,10 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
         }
         setSelectedTicket(null);
         setSelectedTechnician("");
+        setAssignmentNotes("");
+        setReopenTicketId(null);
+        setRejectionReason("");
+        setShowReopenModal(false);
         alert("Ticket réouvert et réassigné avec succès");
       } else {
         const error = await res.json();
@@ -1026,7 +1105,9 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                                t.status === "resolu" ? "#28a745" : 
                                t.status === "cloture" ? "#6c757d" :
                                t.status === "rejete" ? "#dc3545" : "#e0e0e0",
-                    color: "white"
+                    color: "white",
+                    whiteSpace: "nowrap",
+                    display: "inline-block"
                   }}>
                     {t.status === "en_attente_analyse" ? "En attente" :
                      t.status === "assigne_technicien" ? "Assigné" :
@@ -1047,7 +1128,7 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                           style={{ padding: "4px 8px", fontSize: "12px", minWidth: "200px" }}
                         >
                           <option value="">Sélectionner un technicien</option>
-                          {technicians.map((tech) => {
+                          {getFilteredTechnicians(t.type).map((tech) => {
                             const workload = tech.assigned_tickets_count || 0;
                             const specialization = tech.specialization ? ` (${tech.specialization})` : "";
                             return (
@@ -1120,7 +1201,7 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                           style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
                         >
                           <option value="">Sélectionner un technicien</option>
-                          {technicians.map((tech) => {
+                          {getFilteredTechnicians(t.type).map((tech) => {
                             const workload = tech.assigned_tickets_count || 0;
                             const specialization = tech.specialization ? ` (${tech.specialization})` : "";
                             return (
@@ -1178,50 +1259,13 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                     </button>
                   ) : t.status === "rejete" ? (
                     // Action pour tickets rejetés - Réouverture
-                    selectedTicket === t.id ? (
-                      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                        <select
-                          value={selectedTechnician}
-                          onChange={(e) => setSelectedTechnician(e.target.value)}
-                          style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
-                        >
-                          <option value="">Sélectionner un technicien</option>
-                          {technicians.map((tech) => {
-                            const workload = tech.assigned_tickets_count || 0;
-                            const specialization = tech.specialization ? ` (${tech.specialization})` : "";
-                            return (
-                              <option key={tech.id} value={tech.id}>
-                                {tech.full_name}{specialization} - {workload} ticket(s)
-                              </option>
-                            );
-                          })}
-                        </select>
-                        <button
-                          onClick={() => handleReopen(t.id)}
-                          disabled={loading || !selectedTechnician}
-                          style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                        >
-                          Confirmer
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedTicket(null);
-                            setSelectedTechnician("");
-                          }}
-                          style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                        >
-                          Annuler
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setSelectedTicket(t.id)}
-                        disabled={loading}
-                        style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                      >
-                        Réouvrir
-                      </button>
-                    )
+                    <button
+                      onClick={() => handleReopenClick(t.id)}
+                      disabled={loading}
+                      style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                    >
+                      Réouvrir
+                    </button>
                   ) : (
                     // Pas d'action pour tickets clôturés
                     <span style={{ color: "#999", fontSize: "12px" }}>
@@ -1368,7 +1412,9 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                                        t.status === "resolu" ? "#28a745" : 
                                        t.status === "cloture" ? "#6c757d" :
                                        t.status === "rejete" ? "#dc3545" : "#e0e0e0",
-                            color: "white"
+                            color: "white",
+                            whiteSpace: "nowrap",
+                            display: "inline-block"
                           }}>
                             {t.status === "en_attente_analyse" ? "En attente" :
                              t.status === "assigne_technicien" ? "Assigné" :
@@ -1388,7 +1434,7 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                                   style={{ padding: "4px 8px", fontSize: "12px", minWidth: "200px" }}
                                 >
                                   <option value="">Sélectionner un technicien</option>
-                                  {technicians.map((tech) => {
+                                  {getFilteredTechnicians(t.type).map((tech) => {
                                     const workload = tech.assigned_tickets_count || 0;
                                     const specialization = tech.specialization ? ` (${tech.specialization})` : "";
                                     return (
@@ -1460,7 +1506,7 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                                   style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
                                 >
                                   <option value="">Sélectionner un technicien</option>
-                                  {technicians.map((tech) => {
+                                  {getFilteredTechnicians(t.type).map((tech) => {
                                     const workload = tech.assigned_tickets_count || 0;
                                     const specialization = tech.specialization ? ` (${tech.specialization})` : "";
                                     return (
@@ -1516,50 +1562,13 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                               Clôturer
                             </button>
                           ) : t.status === "rejete" ? (
-                            selectedTicket === t.id ? (
-                              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                                <select
-                                  value={selectedTechnician}
-                                  onChange={(e) => setSelectedTechnician(e.target.value)}
-                                  style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
-                                >
-                                  <option value="">Sélectionner un technicien</option>
-                                  {technicians.map((tech) => {
-                                    const workload = tech.assigned_tickets_count || 0;
-                                    const specialization = tech.specialization ? ` (${tech.specialization})` : "";
-                                    return (
-                                      <option key={tech.id} value={tech.id}>
-                                        {tech.full_name}{specialization} - {workload} ticket(s)
-                                      </option>
-                                    );
-                                  })}
-                                </select>
-                                <button
-                                  onClick={() => handleReopen(t.id)}
-                                  disabled={loading || !selectedTechnician}
-                                  style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                                >
-                                  Confirmer
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedTicket(null);
-                                    setSelectedTechnician("");
-                                  }}
-                                  style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                                >
-                                  Annuler
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setSelectedTicket(t.id)}
-                                disabled={loading}
-                                style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                              >
-                                Réouvrir
-                              </button>
-                            )
+                            <button
+                              onClick={() => handleReopenClick(t.id)}
+                              disabled={loading}
+                              style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                            >
+                              Réouvrir
+                            </button>
                           ) : (
                             <span style={{ color: "#999", fontSize: "12px" }}>
                               {t.status === "cloture" ? "Clôturé" : "N/A"}
@@ -3047,6 +3056,157 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de réouverture avec motif de rejet */}
+      {showReopenModal && reopenTicketId && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: "white",
+            padding: "24px",
+            borderRadius: "8px",
+            maxWidth: "600px",
+            width: "90%",
+            maxHeight: "90vh",
+            overflowY: "auto"
+          }}>
+            <h3 style={{ marginBottom: "16px", color: "#dc3545" }}>Réouvrir le ticket</h3>
+            
+            {/* Affichage du motif de rejet */}
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "600", color: "#333" }}>
+                Motif de rejet par l'utilisateur :
+              </label>
+              <div style={{
+                padding: "12px",
+                background: "#fff3cd",
+                border: "1px solid #ffc107",
+                borderRadius: "4px",
+                color: "#856404",
+                fontSize: "14px",
+                lineHeight: "1.5",
+                minHeight: "60px",
+                whiteSpace: "pre-wrap"
+              }}>
+                {loadingRejectionReason ? (
+                  <div style={{ color: "#856404", fontStyle: "italic" }}>Chargement du motif...</div>
+                ) : rejectionReason ? (
+                  rejectionReason
+                ) : (
+                  "Aucun motif disponible"
+                )}
+              </div>
+            </div>
+
+            {/* Sélection du technicien */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500", color: "#333" }}>
+                Sélectionner un technicien <span style={{ color: "#dc3545" }}>*</span>
+              </label>
+              <select
+                value={selectedTechnician}
+                onChange={(e) => setSelectedTechnician(e.target.value)}
+                style={{ 
+                  width: "100%", 
+                  padding: "8px", 
+                  border: "1px solid #ddd", 
+                  borderRadius: "4px",
+                  fontSize: "14px"
+                }}
+              >
+                <option value="">Sélectionner un technicien</option>
+                {(() => {
+                  const ticket = allTickets.find(t => t.id === reopenTicketId);
+                  const filteredTechs = ticket ? getFilteredTechnicians(ticket.type) : technicians;
+                  return filteredTechs.map((tech) => {
+                    const workload = tech.assigned_tickets_count || 0;
+                    const specialization = tech.specialization ? ` (${tech.specialization})` : "";
+                    return (
+                      <option key={tech.id} value={tech.id}>
+                        {tech.full_name}{specialization} - {workload} ticket(s)
+                      </option>
+                    );
+                  });
+                })()}
+              </select>
+            </div>
+
+            {/* Notes optionnelles */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500", color: "#333" }}>
+                Notes/Instructions pour le technicien (optionnel)
+              </label>
+              <textarea
+                value={assignmentNotes}
+                onChange={(e) => setAssignmentNotes(e.target.value)}
+                placeholder="Exemple: Prendre en compte le motif de rejet ci-dessus..."
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  resize: "vertical"
+                }}
+              />
+            </div>
+
+            {/* Boutons d'action */}
+            <div style={{ display: "flex", gap: "8px", marginTop: "20px" }}>
+              <button
+                onClick={() => reopenTicketId && handleReopen(reopenTicketId)}
+                disabled={loading || !selectedTechnician}
+                style={{ 
+                  flex: 1, 
+                  padding: "10px", 
+                  backgroundColor: selectedTechnician ? "#17a2b8" : "#ccc", 
+                  color: "white", 
+                  border: "none", 
+                  borderRadius: "4px", 
+                  cursor: selectedTechnician ? "pointer" : "not-allowed",
+                  fontSize: "14px",
+                  fontWeight: "500"
+                }}
+              >
+                {loading ? "Réouverture..." : "Confirmer la réouverture"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowReopenModal(false);
+                  setReopenTicketId(null);
+                  setRejectionReason("");
+                  setSelectedTechnician("");
+                  setAssignmentNotes("");
+                }}
+                disabled={loading}
+                style={{ 
+                  flex: 1, 
+                  padding: "10px", 
+                  background: "#f5f5f5", 
+                  border: "1px solid #ddd", 
+                  borderRadius: "4px", 
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500"
+                }}
+              >
+                Annuler
+              </button>
             </div>
           </div>
         </div>

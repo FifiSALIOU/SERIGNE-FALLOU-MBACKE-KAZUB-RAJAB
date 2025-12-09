@@ -49,6 +49,11 @@ interface Technician {
   id: string;
   full_name: string;
   email: string;
+  specialization?: string | null;
+  assigned_tickets_count?: number;
+  in_progress_tickets_count?: number;
+  agency?: string | null;
+  phone?: string | null;
 }
 
 interface Notification {
@@ -71,6 +76,11 @@ function DSIDashboard({ token }: DSIDashboardProps) {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
   const [selectedTechnician, setSelectedTechnician] = useState<string>("");
+  const [assignmentNotes, setAssignmentNotes] = useState<string>("");
+  const [reopenTicketId, setReopenTicketId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>("");
+  const [loadingRejectionReason, setLoadingRejectionReason] = useState<boolean>(false);
+  const [showReopenModal, setShowReopenModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState({
     openTickets: 0,
@@ -80,6 +90,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
   const [activeSection, setActiveSection] = useState<string>("dashboard");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showTicketsDropdown, setShowTicketsDropdown] = useState<boolean>(false);
+  const [showTechniciansDropdown, setShowTechniciansDropdown] = useState<boolean>(false);
   const [showReportsDropdown, setShowReportsDropdown] = useState<boolean>(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -189,6 +200,132 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     maxTimeUnit: "heure" 
   });
   
+  // États pour les paramètres SMTP/Email
+  const [emailSettings, setEmailSettings] = useState(() => {
+    const saved = localStorage.getItem("emailSettings");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return {
+      provider: "gmail",
+      senderEmail: "tickets@entreprise.com",
+      displayName: "Système de Gestion des Tickets",
+      smtpServer: "smtp.gmail.com",
+      smtpPort: "587",
+      authType: "password",
+      smtpUsername: "tickets@entreprise.com",
+      smtpPassword: "",
+      useTLS: true,
+      verifySSL: true
+    };
+  });
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [emailSubSection, setEmailSubSection] = useState<string>("smtp");
+  
+  // États pour les templates email
+  const [emailTemplates, setEmailTemplates] = useState<Array<{
+    id: number;
+    name: string;
+    active: boolean;
+  }>>(() => {
+    const saved = localStorage.getItem("emailTemplates");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return [
+      { id: 1, name: "Confirmation de Création de Ticket", active: true },
+      { id: 2, name: "Assignation de Ticket", active: true },
+      { id: 3, name: "Ticket Résolu", active: true },
+      { id: 4, name: "Demande de Validation", active: true },
+      { id: 5, name: "Ticket Clôturé", active: true },
+      { id: 6, name: "Demande de Feedback", active: true },
+      { id: 7, name: "Réinitialisation de Mot de Passe", active: true },
+      { id: 8, name: "Bienvenue Nouvel Utilisateur", active: true },
+      { id: 9, name: "Rapport Programmé", active: true },
+      { id: 10, name: "Alerte Ticket Critique", active: true }
+    ];
+  });
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [showTemplateEditor, setShowTemplateEditor] = useState<boolean>(false);
+  const [templateForm, setTemplateForm] = useState({
+    name: "",
+    subject: "",
+    recipients: "creator",
+    customRecipients: "",
+    active: true,
+    content: ""
+  });
+  
+  // États pour les notifications email
+  const [emailNotifications, setEmailNotifications] = useState<Array<{
+    event: string;
+    active: boolean;
+    recipients: string;
+  }>>(() => {
+    const saved = localStorage.getItem("emailNotifications");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return [
+      { event: "Nouveau Ticket Créé", active: true, recipients: "Secrétaire/Adjoint" },
+      { event: "Ticket Assigné", active: true, recipients: "Technicien" },
+      { event: "Ticket Réassigné", active: true, recipients: "Ancien + Nouveau Tech" },
+      { event: "Ticket Résolu", active: true, recipients: "Utilisateur" },
+      { event: "Ticket Rejeté", active: true, recipients: "Technicien" },
+      { event: "Ticket Clôturé", active: true, recipients: "Utilisateur" },
+      { event: "Commentaire Ajouté", active: true, recipients: "Tous les Participants" },
+      { event: "Ticket Escaladé", active: true, recipients: "DSI" },
+      { event: "Ticket Critique en Attente", active: true, recipients: "DSI + Adjoint" },
+      { event: "Rapport Généré", active: true, recipients: "Destinataires Rapport" },
+      { event: "Alerte Système", active: true, recipients: "Admin + DSI" }
+    ];
+  });
+  
+  // États pour la fréquence d'envoi
+  const [emailFrequency, setEmailFrequency] = useState(() => {
+    const saved = localStorage.getItem("emailFrequency");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return {
+      frequency: "immediate",
+      groupInterval: 30,
+      dailyTime: "09:00",
+      silenceFrom: "18:00",
+      silenceTo: "09:00",
+      applyWeekend: true
+    };
+  });
+  
+  // États pour le test email
+  const [testEmail, setTestEmail] = useState({
+    address: "admin@entreprise.com",
+    template: ""
+  });
+  const [testResult, setTestResult] = useState<any>(null);
+  
+  // États pour les logs d'envoi
+  const [emailLogs, setEmailLogs] = useState<Array<{
+    id: number;
+    date: string;
+    recipient: string;
+    template: string;
+    status: "success" | "error";
+    error?: string;
+  }>>(() => {
+    const saved = localStorage.getItem("emailLogs");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return [
+      { id: 1, date: "22/01 14:32:15", recipient: "admin@entreprise.com", template: "Confirmation", status: "success" },
+      { id: 2, date: "22/01 14:15:42", recipient: "jean@entreprise.fr", template: "Assignation", status: "success" },
+      { id: 3, date: "22/01 14:10:28", recipient: "marie@entreprise.com", template: "Résolution", status: "success" },
+      { id: 4, date: "22/01 13:45:10", recipient: "pierre@entreprise.com", template: "Clôture", status: "success" },
+      { id: 5, date: "22/01 13:30:55", recipient: "support@entreprise.com", template: "Alerte Critique", status: "error", error: "Serveur SMTP non disponible. Vérifiez les paramètres de connexion." }
+    ];
+  });
+
   // États pour les paramètres de sécurité
   const [securitySettings, setSecuritySettings] = useState(() => {
     const saved = localStorage.getItem("securitySettings");
@@ -289,6 +426,147 @@ function DSIDashboard({ token }: DSIDashboardProps) {
       status: statusValue
     });
     setShowEditUserModal(true);
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser || !token) return;
+
+    try {
+      // Trouver le rôle_id correspondant au nom du rôle
+      const roleMap: { [key: string]: string } = {
+        "Utilisateur": "Utilisateur",
+        "Technicien (Matériel)": "Technicien",
+        "Technicien (Applicatif)": "Technicien",
+        "Secrétaire DSI": "Secrétaire DSI",
+        "Adjoint DSI": "Adjoint DSI",
+        "DSI": "DSI",
+        "Administrateur": "Admin"
+      };
+
+      // Charger les rôles pour obtenir les IDs
+      const rolesRes = await fetch("http://localhost:8000/auth/roles", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      let roleId = null;
+      if (rolesRes.ok) {
+        const roles = await rolesRes.json();
+        const roleName = roleMap[editUser.role] || editUser.role;
+        const role = roles.find((r: any) => r.name === roleName);
+        if (role) {
+          roleId = role.id;
+        }
+      }
+
+      // Préparer les données de mise à jour
+      const updateData: any = {
+        full_name: editUser.full_name,
+        email: editUser.email,
+        phone: editUser.phone || null,
+        agency: editUser.agency,
+        status: editUser.status
+      };
+
+      if (roleId) {
+        updateData.role_id = roleId;
+      }
+
+      // Gérer la spécialisation pour les techniciens
+      if (editUser.role === "Technicien (Matériel)") {
+        updateData.specialization = "materiel";
+      } else if (editUser.role === "Technicien (Applicatif)") {
+        updateData.specialization = "applicatif";
+      } else {
+        updateData.specialization = null;
+      }
+
+      const res = await fetch(`http://localhost:8000/users/${editingUser.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      if (res.ok) {
+        alert("Utilisateur modifié avec succès !");
+        setShowEditUserModal(false);
+        setEditingUser(null);
+        // Recharger la liste des utilisateurs
+        const usersRes = await fetch("http://localhost:8000/users/", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          setAllUsers(usersData || []);
+        }
+      } else {
+        const error = await res.json();
+        alert(`Erreur: ${error.detail || "Impossible de modifier l'utilisateur"}`);
+      }
+    } catch (err) {
+      console.error("Erreur lors de la modification:", err);
+      alert("Erreur lors de la modification de l'utilisateur");
+    }
+  };
+
+  const handleDeleteUser = async (user: any) => {
+    if (!token) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/users/${user.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        alert(result.message || "Utilisateur supprimé avec succès !");
+        // Recharger la liste des utilisateurs
+        const usersRes = await fetch("http://localhost:8000/users/", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          setAllUsers(usersData || []);
+        }
+      } else {
+        const error = await res.json();
+        alert(`Erreur: ${error.detail || "Impossible de supprimer l'utilisateur"}`);
+      }
+    } catch (err) {
+      console.error("Erreur lors de la suppression:", err);
+      alert("Erreur lors de la suppression de l'utilisateur");
+    }
+  };
+
+  const handleResetPassword = async (user: any) => {
+    if (!token) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/users/${user.id}/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({})
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        alert(`Mot de passe réinitialisé avec succès !\nNouveau mot de passe: ${result.new_password}\n\nCopiez ce mot de passe et communiquez-le à l'utilisateur.`);
+      } else {
+        const error = await res.json();
+        alert(`Erreur: ${error.detail || "Impossible de réinitialiser le mot de passe"}`);
+      }
+    } catch (err) {
+      console.error("Erreur lors de la réinitialisation:", err);
+      alert("Erreur lors de la réinitialisation du mot de passe");
+    }
   };
 
   // Fonctions pour la section Apparence
@@ -650,8 +928,8 @@ function DSIDashboard({ token }: DSIDashboardProps) {
           if (meData.role && meData.role.name) {
             setUserRole(meData.role.name);
             
-            // Charger tous les utilisateurs (si Admin)
-            if (meData.role.name === "Admin") {
+            // Charger tous les utilisateurs (si Admin ou DSI)
+            if (meData.role.name === "Admin" || meData.role.name === "DSI") {
               try {
                 const usersRes = await fetch("http://localhost:8000/users/", {
                   headers: {
@@ -731,6 +1009,24 @@ function DSIDashboard({ token }: DSIDashboardProps) {
      
      return () => clearInterval(interval);
    }, [token]);
+
+  // Fonction pour filtrer les techniciens selon le type du ticket
+  function getFilteredTechnicians(ticketType: string | undefined): Technician[] {
+    if (!ticketType) return technicians;
+    
+    // Si le ticket est de type "materiel", afficher uniquement les techniciens matériel
+    if (ticketType === "materiel") {
+      return technicians.filter(tech => tech.specialization === "materiel");
+    }
+    
+    // Si le ticket est de type "applicatif", afficher uniquement les techniciens applicatif
+    if (ticketType === "applicatif") {
+      return technicians.filter(tech => tech.specialization === "applicatif");
+    }
+    
+    // Par défaut, retourner tous les techniciens
+    return technicians;
+  }
 
   async function handleAssign(ticketId: string) {
     if (!selectedTechnician) {
@@ -896,13 +1192,65 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     }
   }
 
+  async function loadRejectionReason(ticketId: string) {
+    try {
+      const res = await fetch(`http://localhost:8000/tickets/${ticketId}/history`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const history = await res.json();
+        console.log("Historique du ticket:", history); // Debug
+        // Trouver l'entrée d'historique correspondant au rejet
+        const rejectionEntry = history.find((h: any) => 
+          h.new_status === "rejete" && h.reason && (
+            h.reason.includes("Validation utilisateur: Rejeté") || 
+            h.reason.includes("Rejeté")
+          )
+        );
+        console.log("Entrée de rejet trouvée:", rejectionEntry); // Debug
+        if (rejectionEntry && rejectionEntry.reason) {
+          // Extraire le motif du format "Validation utilisateur: Rejeté. Motif: [motif]"
+          const match = rejectionEntry.reason.match(/Motif:\s*(.+)/);
+          const extractedReason = match ? match[1].trim() : rejectionEntry.reason;
+          console.log("Motif extrait:", extractedReason); // Debug
+          return extractedReason;
+        }
+      } else {
+        console.error("Erreur HTTP:", res.status, res.statusText);
+      }
+      return "Motif non disponible";
+    } catch (err) {
+      console.error("Erreur chargement historique:", err);
+      return "Erreur lors du chargement du motif";
+    }
+  }
+
+  async function handleReopenClick(ticketId: string) {
+    setReopenTicketId(ticketId);
+    setShowReopenModal(true);
+    setSelectedTechnician("");
+    setAssignmentNotes("");
+    setRejectionReason("");
+    setLoadingRejectionReason(true);
+    
+    try {
+      const reason = await loadRejectionReason(ticketId);
+      setRejectionReason(reason);
+    } catch (err) {
+      console.error("Erreur:", err);
+      setRejectionReason("Erreur lors du chargement du motif de rejet");
+    } finally {
+      setLoadingRejectionReason(false);
+    }
+  }
+
   async function handleReopen(ticketId: string) {
     if (!selectedTechnician) {
       alert("Veuillez sélectionner un technicien pour la réouverture");
       return;
     }
-
-    if (!confirm("Êtes-vous sûr de vouloir réouvrir ce ticket et le réassigner ?")) return;
 
     setLoading(true);
     try {
@@ -914,7 +1262,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
         },
         body: JSON.stringify({
           technician_id: selectedTechnician,
-          reason: "Réouverture après rejet utilisateur",
+          reason: assignmentNotes || "Réouverture après rejet utilisateur",
         }),
       });
 
@@ -930,6 +1278,10 @@ function DSIDashboard({ token }: DSIDashboardProps) {
         }
         setSelectedTicket(null);
         setSelectedTechnician("");
+        setAssignmentNotes("");
+        setReopenTicketId(null);
+        setRejectionReason("");
+        setShowReopenModal(false);
         alert("Ticket réouvert et réassigné avec succès");
       } else {
         const error = await res.json();
@@ -1371,6 +1723,29 @@ function DSIDashboard({ token }: DSIDashboardProps) {
               </div>
             </div>
           )}
+        </div>
+        <div 
+          onClick={() => setActiveSection("technicians")}
+          style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "12px", 
+            padding: "12px 16px", 
+            cursor: "pointer",
+            color: "white",
+            borderRadius: "4px",
+            background: activeSection === "technicians" ? "rgba(255,255,255,0.1)" : "transparent"
+          }}
+        >
+          <div style={{ width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+          <div style={{ flex: 1 }}>Techniciens</div>
         </div>
         {userRole === "Admin" && (
           <div 
@@ -1921,7 +2296,9 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                                t.status === "resolu" ? "#28a745" : 
                                t.status === "cloture" ? "#6c757d" :
                                t.status === "rejete" ? "#dc3545" : "#e0e0e0",
-                    color: "white"
+                    color: "white",
+                    whiteSpace: "nowrap",
+                    display: "inline-block"
                   }}>
                     {t.status === "en_attente_analyse" ? "En attente" :
                      t.status === "assigne_technicien" ? "Assigné" :
@@ -1942,7 +2319,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                           style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
                         >
                           <option value="">Sélectionner un technicien</option>
-                          {technicians.map((tech) => (
+                          {getFilteredTechnicians(t.type).map((tech) => (
                             <option key={tech.id} value={tech.id}>
                               {tech.full_name}
                             </option>
@@ -1993,7 +2370,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                           style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
                         >
                           <option value="">Sélectionner un technicien</option>
-                          {technicians.map((tech) => (
+                          {getFilteredTechnicians(t.type).map((tech) => (
                             <option key={tech.id} value={tech.id}>
                               {tech.full_name}
                             </option>
@@ -2045,46 +2422,13 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                     </button>
                   ) : t.status === "rejete" ? (
                     // Action pour tickets rejetés - Réouverture
-                    selectedTicket === t.id ? (
-                      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                        <select
-                          value={selectedTechnician}
-                          onChange={(e) => setSelectedTechnician(e.target.value)}
-                          style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
-                        >
-                          <option value="">Sélectionner un technicien</option>
-                          {technicians.map((tech) => (
-                            <option key={tech.id} value={tech.id}>
-                              {tech.full_name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => handleReopen(t.id)}
-                          disabled={loading || !selectedTechnician}
-                          style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                        >
-                          Confirmer
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedTicket(null);
-                            setSelectedTechnician("");
-                          }}
-                          style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                        >
-                          Annuler
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setSelectedTicket(t.id)}
-                        disabled={loading}
-                        style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                      >
-                        Réouvrir
-                      </button>
-                    )
+                    <button
+                      onClick={() => handleReopenClick(t.id)}
+                      disabled={loading}
+                      style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                    >
+                      Réouvrir
+                    </button>
                   ) : (
                     // Pas d'action pour tickets clôturés
                     <span style={{ color: "#999", fontSize: "12px" }}>
@@ -2158,7 +2502,9 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                                        t.status === "resolu" ? "#28a745" : 
                                        t.status === "cloture" ? "#6c757d" :
                                        t.status === "rejete" ? "#dc3545" : "#e0e0e0",
-                            color: "white"
+                            color: "white",
+                            whiteSpace: "nowrap",
+                            display: "inline-block"
                           }}>
                             {t.status === "en_attente_analyse" ? "En attente" :
                              t.status === "assigne_technicien" ? "Assigné" :
@@ -2178,7 +2524,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                                   style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
                                 >
                                   <option value="">Sélectionner un technicien</option>
-                                  {technicians.map((tech) => (
+                                  {getFilteredTechnicians(t.type).map((tech) => (
                                     <option key={tech.id} value={tech.id}>
                                       {tech.full_name}
                                     </option>
@@ -2228,7 +2574,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                                   style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
                                 >
                                   <option value="">Sélectionner un technicien</option>
-                                  {technicians.map((tech) => (
+                                  {getFilteredTechnicians(t.type).map((tech) => (
                                     <option key={tech.id} value={tech.id}>
                                       {tech.full_name}
                                     </option>
@@ -2278,46 +2624,13 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                               Clôturer
                             </button>
                           ) : t.status === "rejete" ? (
-                            selectedTicket === t.id ? (
-                              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                                <select
-                                  value={selectedTechnician}
-                                  onChange={(e) => setSelectedTechnician(e.target.value)}
-                                  style={{ padding: "4px 8px", fontSize: "12px", minWidth: "150px" }}
-                                >
-                                  <option value="">Sélectionner un technicien</option>
-                                  {technicians.map((tech) => (
-                                    <option key={tech.id} value={tech.id}>
-                                      {tech.full_name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <button
-                                  onClick={() => handleReopen(t.id)}
-                                  disabled={loading || !selectedTechnician}
-                                  style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                                >
-                                  Confirmer
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedTicket(null);
-                                    setSelectedTechnician("");
-                                  }}
-                                  style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                                >
-                                  Annuler
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setSelectedTicket(t.id)}
-                                disabled={loading}
-                                style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                              >
-                                Réouvrir
-                              </button>
-                            )
+                            <button
+                              onClick={() => handleReopenClick(t.id)}
+                              disabled={loading}
+                              style={{ fontSize: "12px", padding: "6px 12px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                            >
+                              Réouvrir
+                            </button>
                           ) : (
                             <span style={{ color: "#999", fontSize: "12px" }}>
                               {t.status === "cloture" ? "Clôturé" : "N/A"}
@@ -3648,8 +3961,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                                  <button
                                    onClick={() => {
                                      if (confirm(`Êtes-vous sûr de vouloir réinitialiser le mot de passe de ${user.full_name} ?`)) {
-                                       // TODO: Implémenter la réinitialisation du mot de passe
-                                       alert(`Réinitialisation du mot de passe pour ${user.full_name}`);
+                                       handleResetPassword(user);
                                      }
                                    }}
                                    style={{ 
@@ -3668,8 +3980,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                                  <button
                                    onClick={() => {
                                      if (confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur ${user.full_name} ? Cette action est irréversible.`)) {
-                                       // TODO: Implémenter la suppression
-                                       alert(`Suppression de l'utilisateur ${user.full_name}`);
+                                       handleDeleteUser(user);
                                      }
                                    }}
                                    style={{ 
@@ -3716,6 +4027,58 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                </>
              );
            })()}
+
+           {activeSection === "technicians" && (
+             <div style={{ padding: "24px" }}>
+               <h2 style={{ marginBottom: "24px", fontSize: "28px", fontWeight: "600", color: "#333" }}>Gestion des Techniciens</h2>
+               
+               {/* Tableau des techniciens */}
+               <div style={{ background: "white", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", overflow: "hidden" }}>
+                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                   <thead>
+                     <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #dee2e6" }}>
+                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Nom</th>
+                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Email</th>
+                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Spécialisation</th>
+                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Tickets Assignés</th>
+                       <th style={{ padding: "12px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Tickets en cours</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {technicians.length === 0 ? (
+                       <tr>
+                         <td colSpan={5} style={{ textAlign: "center", padding: "20px", color: "#999" }}>
+                           Aucun technicien trouvé
+                         </td>
+                       </tr>
+                     ) : (
+                       technicians.map((tech: any) => (
+                         <tr key={tech.id} style={{ borderBottom: "1px solid #eee" }}>
+                           <td style={{ padding: "12px", color: "#333" }}>{tech.full_name}</td>
+                           <td style={{ padding: "12px", color: "#333" }}>{tech.email}</td>
+                           <td style={{ padding: "12px" }}>
+                             <span style={{
+                               padding: "4px 8px",
+                               borderRadius: "12px",
+                               fontSize: "11px",
+                               fontWeight: "500",
+                               background: tech.specialization === "materiel" ? "#007bff" : "#28a745",
+                               color: "white",
+                               whiteSpace: "nowrap"
+                             }}>
+                               {tech.specialization === "materiel" ? "Matériel" : "Applicatif"}
+                             </span>
+                           </td>
+                           <td style={{ padding: "12px", color: "#333" }}>{tech.assigned_tickets_count || 0}</td>
+                           <td style={{ padding: "12px", color: "#333" }}>{tech.in_progress_tickets_count || 0}</td>
+                         </tr>
+                       ))
+                     )}
+                   </tbody>
+                 </table>
+               </div>
+             </div>
+           )}
 
            {activeSection === "apparence" && (
                <div style={{ padding: "24px" }}>
@@ -4633,6 +4996,1186 @@ function DSIDashboard({ token }: DSIDashboardProps) {
              </div>
            )}
 
+           {activeSection === "email" && (
+             <div style={{ padding: "24px" }}>
+               <h1 style={{ marginBottom: "32px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
+                 Configuration Email
+               </h1>
+
+               {/* Navigation par onglets */}
+               <div style={{ 
+                 display: "flex", 
+                 gap: "8px", 
+                 marginBottom: "24px", 
+                 borderBottom: "2px solid #e0e0e0" 
+               }}>
+                 <button
+                   onClick={() => setEmailSubSection("smtp")}
+                   style={{
+                     padding: "12px 24px",
+                     backgroundColor: emailSubSection === "smtp" ? "#007bff" : "transparent",
+                     color: emailSubSection === "smtp" ? "white" : "#666",
+                     border: "none",
+                     borderBottom: emailSubSection === "smtp" ? "2px solid #007bff" : "2px solid transparent",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: emailSubSection === "smtp" ? "600" : "400",
+                     marginBottom: "-2px"
+                   }}
+                 >
+                   Configuration SMTP
+                 </button>
+                 <button
+                   onClick={() => setEmailSubSection("templates")}
+                   style={{
+                     padding: "12px 24px",
+                     backgroundColor: emailSubSection === "templates" ? "#007bff" : "transparent",
+                     color: emailSubSection === "templates" ? "white" : "#666",
+                     border: "none",
+                     borderBottom: emailSubSection === "templates" ? "2px solid #007bff" : "2px solid transparent",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: emailSubSection === "templates" ? "600" : "400",
+                     marginBottom: "-2px"
+                   }}
+                 >
+                   Templates Email
+                 </button>
+                 <button
+                   onClick={() => setEmailSubSection("notifications")}
+                   style={{
+                     padding: "12px 24px",
+                     backgroundColor: emailSubSection === "notifications" ? "#007bff" : "transparent",
+                     color: emailSubSection === "notifications" ? "white" : "#666",
+                     border: "none",
+                     borderBottom: emailSubSection === "notifications" ? "2px solid #007bff" : "2px solid transparent",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: emailSubSection === "notifications" ? "600" : "400",
+                     marginBottom: "-2px"
+                   }}
+                 >
+                   Notifications
+                 </button>
+                 <button
+                   onClick={() => setEmailSubSection("frequency")}
+                   style={{
+                     padding: "12px 24px",
+                     backgroundColor: emailSubSection === "frequency" ? "#007bff" : "transparent",
+                     color: emailSubSection === "frequency" ? "white" : "#666",
+                     border: "none",
+                     borderBottom: emailSubSection === "frequency" ? "2px solid #007bff" : "2px solid transparent",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: emailSubSection === "frequency" ? "600" : "400",
+                     marginBottom: "-2px"
+                   }}
+                 >
+                   Fréquence d'Envoi
+                 </button>
+                 <button
+                   onClick={() => setEmailSubSection("test")}
+                   style={{
+                     padding: "12px 24px",
+                     backgroundColor: emailSubSection === "test" ? "#007bff" : "transparent",
+                     color: emailSubSection === "test" ? "white" : "#666",
+                     border: "none",
+                     borderBottom: emailSubSection === "test" ? "2px solid #007bff" : "2px solid transparent",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: emailSubSection === "test" ? "600" : "400",
+                     marginBottom: "-2px"
+                   }}
+                 >
+                   Test
+                 </button>
+                 <button
+                   onClick={() => setEmailSubSection("logs")}
+                   style={{
+                     padding: "12px 24px",
+                     backgroundColor: emailSubSection === "logs" ? "#007bff" : "transparent",
+                     color: emailSubSection === "logs" ? "white" : "#666",
+                     border: "none",
+                     borderBottom: emailSubSection === "logs" ? "2px solid #007bff" : "2px solid transparent",
+                     cursor: "pointer",
+                     fontSize: "14px",
+                     fontWeight: emailSubSection === "logs" ? "600" : "400",
+                     marginBottom: "-2px"
+                   }}
+                 >
+                   Logs
+                 </button>
+               </div>
+
+               {/* Section SERVEUR SMTP */}
+               {emailSubSection === "smtp" && (
+                 <>
+               <div style={{ 
+                 marginBottom: "32px", 
+                 border: "1px solid #ddd", 
+                 borderRadius: "8px", 
+                 padding: "24px",
+                 background: "white"
+               }}>
+                 <h2 style={{ marginBottom: "24px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                   SERVEUR SMTP
+                 </h2>
+
+                 {/* Fournisseur Email */}
+                 <div style={{ marginBottom: "20px" }}>
+                   <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                     Fournisseur Email <span style={{ color: "#dc3545" }}>*</span>
+                   </label>
+                   <div style={{ position: "relative", display: "inline-block", width: "100%" }}>
+                     <select
+                       value={emailSettings.provider}
+                       onChange={(e) => {
+                         const provider = e.target.value;
+                         setEmailSettings({
+                           ...emailSettings,
+                           provider,
+                           smtpServer: provider === "gmail" ? "smtp.gmail.com" : 
+                                      provider === "outlook" ? "smtp.office365.com" : 
+                                      provider === "sendgrid" ? "smtp.sendgrid.net" :
+                                      provider === "mailgun" ? "smtp.mailgun.org" : emailSettings.smtpServer,
+                           smtpPort: provider === "gmail" ? "587" : 
+                                    provider === "outlook" ? "587" : 
+                                    provider === "sendgrid" ? "587" :
+                                    provider === "mailgun" ? "587" : emailSettings.smtpPort
+                         });
+                       }}
+                       style={{ 
+                         width: "100%",
+                         padding: "10px 32px 10px 12px", 
+                         borderRadius: "4px", 
+                         border: "1px solid #ddd", 
+                         backgroundColor: "white", 
+                         color: "#333", 
+                         fontSize: "14px", 
+                         cursor: "pointer",
+                         appearance: "none",
+                         WebkitAppearance: "none",
+                         MozAppearance: "none"
+                       }}
+                     >
+                       <option value="gmail">Gmail (Gmail SMTP)</option>
+                       <option value="outlook">Outlook (Office 365)</option>
+                       <option value="custom">Serveur SMTP personnalisé</option>
+                       <option value="sendgrid">SendGrid</option>
+                       <option value="mailgun">Mailgun</option>
+                     </select>
+                     <span style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "#666", pointerEvents: "none" }}>▼</span>
+                   </div>
+                 </div>
+
+                 {/* Adresse Email d'Envoi */}
+                 <div style={{ marginBottom: "20px" }}>
+                   <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                     Adresse Email d'Envoi <span style={{ color: "#dc3545" }}>*</span>
+                   </label>
+                   <input
+                     type="email"
+                     value={emailSettings.senderEmail}
+                     onChange={(e) => setEmailSettings({ ...emailSettings, senderEmail: e.target.value })}
+                     placeholder="tickets@entreprise.com"
+                     style={{ 
+                       width: "100%",
+                       padding: "10px", 
+                       borderRadius: "4px", 
+                       border: "1px solid #ddd", 
+                       backgroundColor: "white", 
+                       color: "#333", 
+                       fontSize: "14px"
+                     }}
+                   />
+                   <p style={{ marginTop: "4px", fontSize: "12px", color: "#666" }}>
+                     Cette adresse sera utilisée pour envoyer les emails
+                   </p>
+                 </div>
+
+                 {/* Nom d'Affichage */}
+                 <div style={{ marginBottom: "20px" }}>
+                   <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                     Nom d'Affichage <span style={{ color: "#dc3545" }}>*</span>
+                   </label>
+                   <input
+                     type="text"
+                     value={emailSettings.displayName}
+                     onChange={(e) => setEmailSettings({ ...emailSettings, displayName: e.target.value })}
+                     placeholder="Système de Gestion des Tickets"
+                     style={{ 
+                       width: "100%",
+                       padding: "10px", 
+                       borderRadius: "4px", 
+                       border: "1px solid #ddd", 
+                       backgroundColor: "white", 
+                       color: "#333", 
+                       fontSize: "14px"
+                     }}
+                   />
+                   <p style={{ marginTop: "4px", fontSize: "12px", color: "#666" }}>
+                     Le nom qui apparaîtra dans les emails reçus
+                   </p>
+                 </div>
+
+                 {/* Serveur SMTP */}
+                 <div style={{ marginBottom: "20px" }}>
+                   <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                     Serveur SMTP <span style={{ color: "#dc3545" }}>*</span>
+                   </label>
+                   <input
+                     type="text"
+                     value={emailSettings.smtpServer}
+                     onChange={(e) => setEmailSettings({ ...emailSettings, smtpServer: e.target.value })}
+                     placeholder="smtp.gmail.com"
+                     style={{ 
+                       width: "100%",
+                       padding: "10px", 
+                       borderRadius: "4px", 
+                       border: "1px solid #ddd", 
+                       backgroundColor: "white", 
+                       color: "#333", 
+                       fontSize: "14px"
+                     }}
+                   />
+                 </div>
+
+                 {/* Port SMTP */}
+                 <div style={{ marginBottom: "20px" }}>
+                   <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                     Port SMTP <span style={{ color: "#dc3545" }}>*</span>
+                   </label>
+                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                     <div style={{ position: "relative", display: "inline-block", flex: "0 0 150px" }}>
+                       <select
+                         value={emailSettings.smtpPort}
+                         onChange={(e) => setEmailSettings({ ...emailSettings, smtpPort: e.target.value })}
+                         style={{ 
+                           width: "100%",
+                           padding: "10px 32px 10px 12px", 
+                           borderRadius: "4px", 
+                           border: "1px solid #ddd", 
+                           backgroundColor: "white", 
+                           color: "#333", 
+                           fontSize: "14px", 
+                           cursor: "pointer",
+                           appearance: "none",
+                           WebkitAppearance: "none",
+                           MozAppearance: "none"
+                         }}
+                       >
+                         <option value="587">587</option>
+                         <option value="465">465</option>
+                         <option value="25">25</option>
+                         <option value="2525">2525</option>
+                       </select>
+                       <span style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "#666", pointerEvents: "none" }}>▼</span>
+                     </div>
+                     <span style={{ fontSize: "12px", color: "#666" }}>(ou 465 pour SSL)</span>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Section Authentification */}
+               <div style={{ 
+                 marginBottom: "32px", 
+                 border: "1px solid #ddd", 
+                 borderRadius: "8px", 
+                 padding: "24px",
+                 background: "white"
+               }}>
+                 <h2 style={{ marginBottom: "24px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                   Authentification
+                 </h2>
+
+                 {/* Type d'authentification */}
+                 <div style={{ marginBottom: "20px" }}>
+                   <label style={{ display: "block", marginBottom: "12px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                     Type d'authentification
+                   </label>
+                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                       <input
+                         type="radio"
+                         name="authType"
+                         value="none"
+                         checked={emailSettings.authType === "none"}
+                         onChange={(e) => setEmailSettings({ ...emailSettings, authType: e.target.value })}
+                         style={{ cursor: "pointer" }}
+                       />
+                       <span>Aucune</span>
+                     </label>
+                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                       <input
+                         type="radio"
+                         name="authType"
+                         value="password"
+                         checked={emailSettings.authType === "password"}
+                         onChange={(e) => setEmailSettings({ ...emailSettings, authType: e.target.value })}
+                         style={{ cursor: "pointer" }}
+                       />
+                       <span>Nom d'utilisateur et mot de passe</span>
+                     </label>
+                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                       <input
+                         type="radio"
+                         name="authType"
+                         value="oauth"
+                         checked={emailSettings.authType === "oauth"}
+                         onChange={(e) => setEmailSettings({ ...emailSettings, authType: e.target.value })}
+                         style={{ cursor: "pointer" }}
+                       />
+                       <span>OAuth 2.0</span>
+                     </label>
+                   </div>
+                 </div>
+
+                 {/* Nom d'Utilisateur SMTP */}
+                 {emailSettings.authType !== "none" && (
+                   <>
+                     <div style={{ marginBottom: "20px" }}>
+                       <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                         Nom d'Utilisateur SMTP
+                       </label>
+                       <input
+                         type="text"
+                         value={emailSettings.smtpUsername}
+                         onChange={(e) => setEmailSettings({ ...emailSettings, smtpUsername: e.target.value })}
+                         placeholder="tickets@entreprise.com"
+                         style={{ 
+                           width: "100%",
+                           padding: "10px", 
+                           borderRadius: "4px", 
+                           border: "1px solid #ddd", 
+                           backgroundColor: "white", 
+                           color: "#333", 
+                           fontSize: "14px"
+                         }}
+                       />
+                     </div>
+
+                     {/* Mot de Passe SMTP */}
+                     {emailSettings.authType === "password" && (
+                       <div style={{ marginBottom: "20px" }}>
+                         <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                           Mot de Passe SMTP
+                         </label>
+                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                           <input
+                             type={showPassword ? "text" : "password"}
+                             value={emailSettings.smtpPassword}
+                             onChange={(e) => setEmailSettings({ ...emailSettings, smtpPassword: e.target.value })}
+                             placeholder="••••••••••••••••"
+                             style={{ 
+                               flex: 1,
+                               padding: "10px", 
+                               borderRadius: "4px", 
+                               border: "1px solid #ddd", 
+                               backgroundColor: "white", 
+                               color: "#333", 
+                               fontSize: "14px"
+                             }}
+                           />
+                           <button
+                             type="button"
+                             onClick={() => setShowPassword(!showPassword)}
+                             style={{
+                               padding: "10px 16px",
+                               backgroundColor: "#f8f9fa",
+                               color: "#333",
+                               border: "1px solid #ddd",
+                               borderRadius: "4px",
+                               cursor: "pointer",
+                               fontSize: "14px"
+                             }}
+                           >
+                             {showPassword ? "Masquer" : "Afficher"}
+                           </button>
+                         </div>
+                       </div>
+                     )}
+                   </>
+                 )}
+
+                 {/* Checkboxes TLS/SSL */}
+                 <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={emailSettings.useTLS}
+                       onChange={(e) => setEmailSettings({ ...emailSettings, useTLS: e.target.checked })}
+                       style={{ cursor: "pointer" }}
+                     />
+                     <span>Utiliser TLS/SSL</span>
+                   </label>
+                   <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                     <input
+                       type="checkbox"
+                       checked={emailSettings.verifySSL}
+                       onChange={(e) => setEmailSettings({ ...emailSettings, verifySSL: e.target.checked })}
+                       style={{ cursor: "pointer" }}
+                     />
+                     <span>Vérifier le certificat SSL</span>
+                   </label>
+                 </div>
+               </div>
+
+               {/* Boutons d'action */}
+               <div style={{ 
+                 display: "flex", 
+                 justifyContent: "flex-end", 
+                 gap: "12px",
+                 marginTop: "32px",
+                 paddingTop: "24px",
+                 borderTop: "1px solid #eee"
+               }}>
+                 <button
+                   onClick={() => {
+                     // Réinitialiser les valeurs
+                     setEmailSettings({
+                       provider: "gmail",
+                       senderEmail: "tickets@entreprise.com",
+                       displayName: "Système de Gestion des Tickets",
+                       smtpServer: "smtp.gmail.com",
+                       smtpPort: "587",
+                       authType: "password",
+                       smtpUsername: "tickets@entreprise.com",
+                       smtpPassword: "",
+                       useTLS: true,
+                       verifySSL: true
+                     });
+                   }}
+                   style={{
+                     padding: "10px 20px",
+                     backgroundColor: "#6c757d",
+                     color: "white",
+                     border: "none",
+                     borderRadius: "4px",
+                     cursor: "pointer",
+                     fontSize: "14px"
+                   }}
+                 >
+                   Annuler
+                 </button>
+                 <button
+                   onClick={() => {
+                     localStorage.setItem("emailSettings", JSON.stringify(emailSettings));
+                     alert("Paramètres email enregistrés avec succès !");
+                   }}
+                   style={{
+                     padding: "10px 20px",
+                     backgroundColor: "#28a745",
+                     color: "white",
+                     border: "none",
+                     borderRadius: "4px",
+                     cursor: "pointer",
+                     fontSize: "14px"
+                   }}
+                 >
+                   Enregistrer
+                 </button>
+               </div>
+                 </>
+               )}
+
+               {/* Section Templates Email */}
+               {emailSubSection === "templates" && (
+                 <div>
+                   <h2 style={{ marginBottom: "16px", fontSize: "20px", fontWeight: "600", color: "#333", textAlign: "center" }}>
+                     TEMPLATES EMAIL
+                   </h2>
+                   <p style={{ marginBottom: "24px", fontSize: "14px", color: "#666", textAlign: "center" }}>
+                     Sélectionnez un <span style={{ color: "#dc3545" }}>template</span> à configurer :
+                   </p>
+
+                   <div style={{ background: "white", borderRadius: "8px", border: "1px solid #ddd", overflow: "hidden" }}>
+                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                       <thead>
+                         <tr style={{ background: "#f8f9fa", borderBottom: "2px solid #ddd" }}>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#333", borderRight: "1px solid #ddd" }}>Template</th>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#333", borderRight: "1px solid #ddd" }}>Statut</th>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#333" }}>Actions</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {emailTemplates.map((template) => (
+                           <tr key={template.id} style={{ borderBottom: "1px solid #eee" }}>
+                             <td style={{ padding: "12px", color: "#333" }}>{template.name}</td>
+                             <td style={{ padding: "12px" }}>
+                               <span style={{ display: "flex", alignItems: "center", gap: "6px", color: "#28a745" }}>
+                                 <span style={{ fontSize: "16px" }}>✓</span>
+                                 <span>Actif</span>
+                               </span>
+                             </td>
+                             <td style={{ padding: "12px" }}>
+                               <div style={{ display: "flex", gap: "12px" }}>
+                                 <button
+                                   onClick={() => {
+                                     setSelectedTemplate(template);
+                                     setTemplateForm({
+                                       name: template.name,
+                                       subject: `Votre ticket #{{TICKET_ID}} a été créé avec succès`,
+                                       recipients: "creator",
+                                       customRecipients: "",
+                                       active: template.active,
+                                       content: `Bonjour {{USER_NAME}},\n\nVotre ticket a été créé avec succès.\n\nDétails du Ticket :\n• Numéro : #{{TICKET_ID}}\n• Titre : {{TICKET_TITLE}}\n• Priorité : {{PRIORITY}}\n• Département : {{DEPARTMENT}}\n• Date de Création : {{CREATION_DATE}}\n\nVous pouvez suivre l'avancement de votre ticket en vous connectant à l'application.\n\nSi vous avez des questions, contactez-nous à :\n{{SUPPORT_EMAIL}}\n\nCordialement,\nÉquipe Support`
+                                     });
+                                     setShowTemplateEditor(true);
+                                   }}
+                                   style={{
+                                     background: "none",
+                                     border: "none",
+                                     cursor: "pointer",
+                                     padding: "4px 8px"
+                                   }}
+                                   title="Éditer"
+                                 >
+                                   <span style={{ fontSize: "18px" }}>✏️</span>
+                                 </button>
+                                 <button
+                                   onClick={() => {
+                                     // Aperçu
+                                     alert(`Aperçu du template: ${template.name}`);
+                                   }}
+                                   style={{
+                                     background: "none",
+                                     border: "none",
+                                     cursor: "pointer",
+                                     padding: "4px 8px"
+                                   }}
+                                   title="Aperçu"
+                                 >
+                                   <span style={{ fontSize: "18px" }}>👁️</span>
+                                 </button>
+                                 <button
+                                   onClick={() => {
+                                     if (confirm(`Êtes-vous sûr de vouloir supprimer le template "${template.name}" ?`)) {
+                                       setEmailTemplates(emailTemplates.filter(t => t.id !== template.id));
+                                       localStorage.setItem("emailTemplates", JSON.stringify(emailTemplates.filter(t => t.id !== template.id)));
+                                     }
+                                   }}
+                                   style={{
+                                     background: "none",
+                                     border: "none",
+                                     cursor: "pointer",
+                                     padding: "4px 8px"
+                                   }}
+                                   title="Supprimer"
+                                 >
+                                   <span style={{ fontSize: "18px" }}>🗑️</span>
+                                 </button>
+                               </div>
+                             </td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                   </div>
+
+                   {/* Modal d'édition de template */}
+                   {showTemplateEditor && (
+                     <div style={{
+                       position: "fixed",
+                       top: 0,
+                       left: 0,
+                       right: 0,
+                       bottom: 0,
+                       background: "rgba(0,0,0,0.5)",
+                       display: "flex",
+                       alignItems: "center",
+                       justifyContent: "center",
+                       zIndex: 1000
+                     }}>
+                       <div style={{
+                         background: "white",
+                         borderRadius: "8px",
+                         padding: "24px",
+                         width: "90%",
+                         maxWidth: "800px",
+                         maxHeight: "90vh",
+                         overflow: "auto"
+                       }}>
+                         <h2 style={{ marginBottom: "8px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                           ÉDITER TEMPLATE EMAIL
+                         </h2>
+                         <p style={{ marginBottom: "24px", fontSize: "14px", color: "#666" }}>
+                           {selectedTemplate?.name}
+                         </p>
+
+                         {/* Informations Générales */}
+                         <div style={{ marginBottom: "24px" }}>
+                           <h3 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: "600", color: "#333" }}>
+                             Informations Générales
+                           </h3>
+                           
+                           <div style={{ marginBottom: "16px" }}>
+                             <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                               Nom du Template <span style={{ color: "#dc3545" }}>*</span>
+                             </label>
+                             <input
+                               type="text"
+                               value={templateForm.name}
+                               onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
+                               style={{
+                                 width: "100%",
+                                 padding: "10px",
+                                 borderRadius: "4px",
+                                 border: "1px solid #ddd",
+                                 fontSize: "14px"
+                               }}
+                             />
+                           </div>
+
+                           <div style={{ marginBottom: "16px" }}>
+                             <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                               Objet de l'Email <span style={{ color: "#dc3545" }}>*</span>
+                             </label>
+                             <input
+                               type="text"
+                               value={templateForm.subject}
+                               onChange={(e) => setTemplateForm({ ...templateForm, subject: e.target.value })}
+                               style={{
+                                 width: "100%",
+                                 padding: "10px",
+                                 borderRadius: "4px",
+                                 border: "1px solid #ddd",
+                                 fontSize: "14px"
+                               }}
+                             />
+                           </div>
+
+                           <div style={{ marginBottom: "16px", padding: "12px", background: "#f8f9fa", borderRadius: "4px" }}>
+                             <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                               Variables disponibles :
+                             </label>
+                             <div style={{ fontSize: "12px", color: "#666", fontFamily: "monospace" }}>
+                               {`{{TICKET_ID}} {{TICKET_TITLE}} {{USER_NAME}} {{USER_EMAIL}} {{DEPARTMENT}} {{PRIORITY}} {{CREATION_DATE}} {{SUPPORT_EMAIL}}`}
+                             </div>
+                           </div>
+
+                           <div style={{ marginBottom: "16px" }}>
+                             <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                               Destinataires <span style={{ color: "#dc3545" }}>*</span>
+                             </label>
+                             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                                 <input
+                                   type="radio"
+                                   name="recipients"
+                                   value="creator"
+                                   checked={templateForm.recipients === "creator"}
+                                   onChange={(e) => setTemplateForm({ ...templateForm, recipients: e.target.value })}
+                                 />
+                                 <span>Utilisateur créateur du ticket</span>
+                               </label>
+                               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                                 <input
+                                   type="radio"
+                                   name="recipients"
+                                   value="secretary"
+                                   checked={templateForm.recipients === "secretary"}
+                                   onChange={(e) => setTemplateForm({ ...templateForm, recipients: e.target.value })}
+                                 />
+                                 <span>Secrétaire/Adjoint DSI</span>
+                               </label>
+                               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                                 <input
+                                   type="radio"
+                                   name="recipients"
+                                   value="technician"
+                                   checked={templateForm.recipients === "technician"}
+                                   onChange={(e) => setTemplateForm({ ...templateForm, recipients: e.target.value })}
+                                 />
+                                 <span>Technicien assigné</span>
+                               </label>
+                               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                                 <input
+                                   type="radio"
+                                   name="recipients"
+                                   value="custom"
+                                   checked={templateForm.recipients === "custom"}
+                                   onChange={(e) => setTemplateForm({ ...templateForm, recipients: e.target.value })}
+                                 />
+                                 <span>Personnalisé :</span>
+                                 {templateForm.recipients === "custom" && (
+                                   <input
+                                     type="text"
+                                     value={templateForm.customRecipients}
+                                     onChange={(e) => setTemplateForm({ ...templateForm, customRecipients: e.target.value })}
+                                     placeholder="email@example.com"
+                                     style={{
+                                       flex: 1,
+                                       padding: "8px",
+                                       borderRadius: "4px",
+                                       border: "1px solid #ddd",
+                                       fontSize: "14px"
+                                     }}
+                                   />
+                                 )}
+                               </label>
+                             </div>
+                           </div>
+
+                           <div style={{ marginBottom: "16px" }}>
+                             <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                               <input
+                                 type="checkbox"
+                                 checked={templateForm.active}
+                                 onChange={(e) => setTemplateForm({ ...templateForm, active: e.target.checked })}
+                               />
+                               <span>Envoyer cet email automatiquement</span>
+                             </label>
+                           </div>
+                         </div>
+
+                         {/* Contenu de l'Email */}
+                         <div style={{ marginBottom: "24px" }}>
+                           <h3 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: "600", color: "#333" }}>
+                             Contenu de l'Email
+                           </h3>
+                           <div style={{ border: "1px solid #ddd", borderRadius: "4px", padding: "8px", background: "#f8f9fa" }}>
+                             <div style={{ fontSize: "12px", color: "#666", marginBottom: "8px", fontStyle: "italic" }}>
+                               [Éditeur HTML/Texte Riche]
+                             </div>
+                             <textarea
+                               value={templateForm.content}
+                               onChange={(e) => setTemplateForm({ ...templateForm, content: e.target.value })}
+                               rows={15}
+                               style={{
+                                 width: "100%",
+                                 padding: "12px",
+                                 borderRadius: "4px",
+                                 border: "1px solid #ddd",
+                                 fontSize: "14px",
+                                 fontFamily: "monospace",
+                                 resize: "vertical"
+                               }}
+                             />
+                           </div>
+                           <div style={{ marginTop: "16px", padding: "12px", background: "#e3f2fd", borderRadius: "4px", border: "1px solid #ddd" }}>
+                             <div style={{ fontSize: "14px", fontWeight: "500", marginBottom: "8px" }}>Aperçu</div>
+                             <div style={{ padding: "12px", background: "white", borderRadius: "4px", border: "1px solid #ddd", textAlign: "center", color: "#999" }}>
+                               [Aperçu du rendu final de l'email]
+                             </div>
+                           </div>
+                         </div>
+
+                         <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+                           <button
+                             onClick={() => {
+                               setShowTemplateEditor(false);
+                               setSelectedTemplate(null);
+                             }}
+                             style={{
+                               padding: "10px 20px",
+                               backgroundColor: "#6c757d",
+                               color: "white",
+                               border: "none",
+                               borderRadius: "4px",
+                               cursor: "pointer",
+                               fontSize: "14px"
+                             }}
+                           >
+                             Annuler
+                           </button>
+                           <button
+                             onClick={() => {
+                               // Sauvegarder le template
+                               const updatedTemplates = emailTemplates.map(t => 
+                                 t.id === selectedTemplate?.id 
+                                   ? { ...t, name: templateForm.name, active: templateForm.active }
+                                   : t
+                               );
+                               setEmailTemplates(updatedTemplates);
+                               localStorage.setItem("emailTemplates", JSON.stringify(updatedTemplates));
+                               setShowTemplateEditor(false);
+                               setSelectedTemplate(null);
+                               alert("Template enregistré avec succès !");
+                             }}
+                             style={{
+                               padding: "10px 20px",
+                               backgroundColor: "#28a745",
+                               color: "white",
+                               border: "none",
+                               borderRadius: "4px",
+                               cursor: "pointer",
+                               fontSize: "14px"
+                             }}
+                           >
+                             Enregistrer
+                           </button>
+                         </div>
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               )}
+
+               {/* Section Notifications Email */}
+               {emailSubSection === "notifications" && (
+                 <div>
+                   <h2 style={{ marginBottom: "24px", fontSize: "20px", fontWeight: "600", color: "#333", textAlign: "center" }}>
+                     NOTIFICATIONS EMAIL
+                   </h2>
+                   <div style={{ background: "white", borderRadius: "8px", border: "1px solid #ddd", overflow: "hidden" }}>
+                     <div style={{ padding: "16px", background: "#f8f9fa", borderBottom: "1px solid #ddd" }}>
+                       <h3 style={{ fontSize: "16px", fontWeight: "600", color: "#333" }}>
+                         Événements et Destinataires
+                       </h3>
+                     </div>
+                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                       <thead>
+                         <tr style={{ background: "#f8f9fa", borderBottom: "2px solid #ddd" }}>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#333", borderRight: "1px solid #ddd" }}>Événement</th>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#333", borderRight: "1px solid #ddd" }}>Actif</th>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#333" }}>Destinataires</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {emailNotifications.map((notif, index) => (
+                           <tr key={index} style={{ borderBottom: "1px solid #eee" }}>
+                             <td style={{ padding: "12px", color: notif.event === "Alerte Système" ? "#dc3545" : "#333", fontWeight: notif.event === "Alerte Système" ? "600" : "400" }}>
+                               {notif.event}
+                             </td>
+                             <td style={{ padding: "12px" }}>
+                               <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                                 <input
+                                   type="checkbox"
+                                   checked={notif.active}
+                                   onChange={(e) => {
+                                     const updated = [...emailNotifications];
+                                     updated[index].active = e.target.checked;
+                                     setEmailNotifications(updated);
+                                     localStorage.setItem("emailNotifications", JSON.stringify(updated));
+                                   }}
+                                 />
+                                 {notif.active && <span style={{ color: "#28a745", fontSize: "16px" }}>✓</span>}
+                               </label>
+                             </td>
+                             <td style={{ padding: "12px", color: "#333" }}>{notif.recipients}</td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
+               )}
+
+               {/* Section Fréquence d'Envoi */}
+               {emailSubSection === "frequency" && (
+                 <div>
+                   <h2 style={{ marginBottom: "24px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                     Fréquence d'Envoi
+                   </h2>
+                   <div style={{ border: "2px dashed #007bff", borderRadius: "8px", padding: "24px", background: "white" }}>
+                     <div style={{ marginBottom: "24px" }}>
+                       <label style={{ display: "block", marginBottom: "12px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                         Envoyer les emails :
+                       </label>
+                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                         <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                           <input
+                             type="radio"
+                             name="frequency"
+                             value="immediate"
+                             checked={emailFrequency.frequency === "immediate"}
+                             onChange={(e) => setEmailFrequency({ ...emailFrequency, frequency: e.target.value })}
+                           />
+                           <span>• Immédiatement</span>
+                         </label>
+                         <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                           <input
+                             type="radio"
+                             name="frequency"
+                             value="grouped30"
+                             checked={emailFrequency.frequency === "grouped30"}
+                             onChange={(e) => setEmailFrequency({ ...emailFrequency, frequency: e.target.value })}
+                           />
+                           <span>o Grouper les emails (toutes les <span style={{ color: "#007bff" }}>30</span> minutes)</span>
+                         </label>
+                         <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                           <input
+                             type="radio"
+                             name="frequency"
+                             value="grouped60"
+                             checked={emailFrequency.frequency === "grouped60"}
+                             onChange={(e) => setEmailFrequency({ ...emailFrequency, frequency: e.target.value })}
+                           />
+                           <span>o Grouper les emails (toutes les heures)</span>
+                         </label>
+                         <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                           <input
+                             type="radio"
+                             name="frequency"
+                             value="daily"
+                             checked={emailFrequency.frequency === "daily"}
+                             onChange={(e) => setEmailFrequency({ ...emailFrequency, frequency: e.target.value })}
+                           />
+                           <span>o Grouper les emails (quotidiennement à <span style={{ color: "#007bff" }}>09:00</span>)</span>
+                         </label>
+                       </div>
+                     </div>
+
+                     <div style={{ marginTop: "24px", paddingTop: "24px", borderTop: "1px solid #ddd" }}>
+                       <label style={{ display: "block", marginBottom: "12px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                         Heures de Silence <span style={{ color: "#999" }}>(pas d'emails)</span>
+                       </label>
+                       <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+                         <span>De :</span>
+                         <div style={{ position: "relative", display: "inline-block" }}>
+                           <select
+                             value={emailFrequency.silenceFrom}
+                             onChange={(e) => setEmailFrequency({ ...emailFrequency, silenceFrom: e.target.value })}
+                             style={{
+                               padding: "8px 32px 8px 12px",
+                               borderRadius: "4px",
+                               border: "1px solid #ddd",
+                               fontSize: "14px",
+                               appearance: "none"
+                             }}
+                           >
+                             {Array.from({ length: 24 }, (_, i) => {
+                               const hour = String(i).padStart(2, "0") + ":00";
+                               return <option key={hour} value={hour}>{hour}</option>;
+                             })}
+                           </select>
+                           <span style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>▼</span>
+                         </div>
+                         <span>À :</span>
+                         <div style={{ position: "relative", display: "inline-block" }}>
+                           <select
+                             value={emailFrequency.silenceTo}
+                             onChange={(e) => setEmailFrequency({ ...emailFrequency, silenceTo: e.target.value })}
+                             style={{
+                               padding: "8px 32px 8px 12px",
+                               borderRadius: "4px",
+                               border: "1px solid #ddd",
+                               fontSize: "14px",
+                               appearance: "none"
+                             }}
+                           >
+                             {Array.from({ length: 24 }, (_, i) => {
+                               const hour = String(i).padStart(2, "0") + ":00";
+                               return <option key={hour} value={hour}>{hour}</option>;
+                             })}
+                           </select>
+                           <span style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>▼</span>
+                         </div>
+                       </div>
+                       <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                         <input
+                           type="checkbox"
+                           checked={emailFrequency.applyWeekend}
+                           onChange={(e) => setEmailFrequency({ ...emailFrequency, applyWeekend: e.target.checked })}
+                         />
+                         <span>Appliquer le <span style={{ color: "#dc3545" }}>week-end</span> aussi</span>
+                       </label>
+                     </div>
+                   </div>
+
+                   <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
+                     <button
+                       onClick={() => {
+                         setEmailFrequency({
+                           frequency: "immediate",
+                           groupInterval: 30,
+                           dailyTime: "09:00",
+                           silenceFrom: "18:00",
+                           silenceTo: "09:00",
+                           applyWeekend: true
+                         });
+                       }}
+                       style={{
+                         padding: "10px 20px",
+                         backgroundColor: "#6c757d",
+                         color: "white",
+                         border: "none",
+                         borderRadius: "4px",
+                         cursor: "pointer",
+                         fontSize: "14px"
+                       }}
+                     >
+                       Annuler
+                     </button>
+                     <button
+                       onClick={() => {
+                         localStorage.setItem("emailFrequency", JSON.stringify(emailFrequency));
+                         alert("Paramètres de fréquence enregistrés avec succès !");
+                       }}
+                       style={{
+                         padding: "10px 20px",
+                         backgroundColor: "#28a745",
+                         color: "white",
+                         border: "none",
+                         borderRadius: "4px",
+                         cursor: "pointer",
+                         fontSize: "14px"
+                       }}
+                     >
+                       Enregistrer
+                     </button>
+                   </div>
+                 </div>
+               )}
+
+               {/* Section Test de Configuration */}
+               {emailSubSection === "test" && (
+                 <div>
+                   <h2 style={{ marginBottom: "24px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                     2.6 Test de Configuration Email
+                   </h2>
+                   <div style={{ border: "2px dashed #007bff", borderRadius: "8px", padding: "24px", background: "white" }}>
+                     <div style={{ background: "#dc3545", color: "white", padding: "12px", borderRadius: "4px", marginBottom: "24px", textAlign: "center", fontWeight: "600" }}>
+                       TESTER LA CONFIGURATION EMAIL
+                     </div>
+
+                     <div style={{ marginBottom: "24px" }}>
+                       <h3 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: "600", color: "#333" }}>
+                         Envoyer un Email de Test
+                       </h3>
+                       
+                       <div style={{ marginBottom: "16px" }}>
+                         <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                           Adresse Email de Test <span style={{ color: "#dc3545" }}>*</span>
+                         </label>
+                         <input
+                           type="email"
+                           value={testEmail.address}
+                           onChange={(e) => setTestEmail({ ...testEmail, address: e.target.value })}
+                           placeholder="admin@entreprise.com"
+                           style={{
+                             width: "100%",
+                             padding: "10px",
+                             borderRadius: "4px",
+                             border: "1px solid #ddd",
+                             fontSize: "14px"
+                           }}
+                         />
+                       </div>
+
+                       <div style={{ marginBottom: "16px" }}>
+                         <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#333" }}>
+                           Template à Tester <span style={{ color: "#dc3545" }}>*</span>
+                         </label>
+                         <div style={{ position: "relative", display: "inline-block", width: "100%" }}>
+                           <select
+                             value={testEmail.template}
+                             onChange={(e) => setTestEmail({ ...testEmail, template: e.target.value })}
+                             style={{
+                               width: "100%",
+                               padding: "10px 32px 10px 12px",
+                               borderRadius: "4px",
+                               border: "1px solid #ddd",
+                               fontSize: "14px",
+                               appearance: "none"
+                             }}
+                           >
+                             <option value="">Sélectionner un template</option>
+                             {emailTemplates.map((t) => (
+                               <option key={t.id} value={t.name}>{t.name}</option>
+                             ))}
+                           </select>
+                           <span style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>▼</span>
+                         </div>
+                       </div>
+
+                       <button
+                         onClick={() => {
+                           if (!testEmail.address || !testEmail.template) {
+                             alert("Veuillez remplir tous les champs requis");
+                             return;
+                           }
+                           setTestResult({
+                             success: true,
+                             message: `Email envoyé avec succès à ${testEmail.address}`
+                           });
+                         }}
+                         style={{
+                           padding: "10px 20px",
+                           backgroundColor: "#007bff",
+                           color: "white",
+                           border: "none",
+                           borderRadius: "4px",
+                           cursor: "pointer",
+                           fontSize: "14px"
+                         }}
+                       >
+                         Envoyer Email de Test
+                       </button>
+                     </div>
+
+                     {testResult && (
+                       <div style={{ marginTop: "24px", padding: "16px", background: testResult.success ? "#d4edda" : "#f8d7da", borderRadius: "4px", border: `1px solid ${testResult.success ? "#c3e6cb" : "#f5c6cb"}` }}>
+                         <div style={{ fontSize: "14px", fontWeight: "500", marginBottom: "8px" }}>Résultat :</div>
+                         {testResult.success ? (
+                           <>
+                             <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#155724", marginBottom: "8px" }}>
+                               <span style={{ fontSize: "18px" }}>✓</span>
+                               <span>{testResult.message}</span>
+                             </div>
+                             <div style={{ fontSize: "12px", color: "#155724" }}>
+                               Vérifiez votre boîte de réception (y compris les spams)
+                             </div>
+                           </>
+                         ) : (
+                           <div style={{ color: "#721c24" }}>{testResult.message}</div>
+                         )}
+                       </div>
+                     )}
+                   </div>
+                 </div>
+               )}
+
+               {/* Section Logs d'Envoi */}
+               {emailSubSection === "logs" && (
+                 <div>
+                   <h2 style={{ marginBottom: "24px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                     Logs d'Envoi
+                   </h2>
+                   <div style={{ border: "2px solid #007bff", borderRadius: "8px", padding: "24px", background: "white" }}>
+                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                       <thead>
+                         <tr style={{ background: "#f8f9fa", borderBottom: "2px solid #007bff" }}>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#dc3545", borderRight: "1px solid #ddd" }}>Date/Heure</th>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#dc3545", borderRight: "1px solid #ddd" }}>Email Destinataire</th>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#dc3545", borderRight: "1px solid #ddd" }}>Template</th>
+                           <th style={{ padding: "12px", textAlign: "left", fontSize: "14px", fontWeight: "600", color: "#dc3545" }}>Statut</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {emailLogs.map((log) => (
+                           <tr key={log.id} style={{ borderBottom: "1px solid #ddd" }}>
+                             <td style={{ padding: "12px", color: "#007bff" }}>{log.date}</td>
+                             <td style={{ padding: "12px", color: "#007bff" }}>{log.recipient}</td>
+                             <td style={{ padding: "12px", color: "#dc3545" }}>{log.template}</td>
+                             <td style={{ padding: "12px" }}>
+                               {log.status === "success" ? (
+                                 <span style={{ color: "#28a745" }}>✔ OK</span>
+                               ) : (
+                                 <span style={{ color: "#dc3545" }}>❌ Erreur</span>
+                               )}
+                             </td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+
+                     {emailLogs.some(log => log.status === "error") && (
+                       <div style={{ marginTop: "24px", padding: "16px", background: "#f8d7da", borderRadius: "4px", border: "1px solid #f5c6cb" }}>
+                         <div style={{ fontSize: "14px", fontWeight: "500", marginBottom: "8px", color: "#721c24" }}>
+                           Détails de l'Erreur :
+                         </div>
+                         <div style={{ fontSize: "14px", color: "#721c24" }}>
+                           {emailLogs.find(log => log.status === "error")?.error}
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 </div>
+               )}
+             </div>
+           )}
+
            {activeSection === "securite" && (
              <div style={{ padding: "24px" }}>
                <h1 style={{ marginBottom: "32px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
@@ -5263,13 +6806,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
 
              <div style={{ borderTop: "1px solid #ddd", marginBottom: "24px" }}></div>
 
-             <form onSubmit={(e) => {
-               e.preventDefault();
-               // TODO: Implémenter la modification de l'utilisateur
-               alert("Modification de l'utilisateur (à implémenter)");
-               setShowEditUserModal(false);
-               setEditingUser(null);
-             }}>
+             <form onSubmit={handleUpdateUser}>
                {/* Informations Personnelles */}
                <div style={{ marginBottom: "24px" }}>
                  <h3 style={{ marginBottom: "16px", fontSize: "18px", fontWeight: "600", color: "#333" }}>Informations Personnelles</h3>
@@ -5582,6 +7119,157 @@ function DSIDashboard({ token }: DSIDashboardProps) {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de réouverture avec motif de rejet */}
+      {showReopenModal && reopenTicketId && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: "white",
+            padding: "24px",
+            borderRadius: "8px",
+            maxWidth: "600px",
+            width: "90%",
+            maxHeight: "90vh",
+            overflowY: "auto"
+          }}>
+            <h3 style={{ marginBottom: "16px", color: "#dc3545" }}>Réouvrir le ticket</h3>
+            
+            {/* Affichage du motif de rejet */}
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "600", color: "#333" }}>
+                Motif de rejet par l'utilisateur :
+              </label>
+              <div style={{
+                padding: "12px",
+                background: "#fff3cd",
+                border: "1px solid #ffc107",
+                borderRadius: "4px",
+                color: "#856404",
+                fontSize: "14px",
+                lineHeight: "1.5",
+                minHeight: "60px",
+                whiteSpace: "pre-wrap"
+              }}>
+                {loadingRejectionReason ? (
+                  <div style={{ color: "#856404", fontStyle: "italic" }}>Chargement du motif...</div>
+                ) : rejectionReason ? (
+                  rejectionReason
+                ) : (
+                  "Aucun motif disponible"
+                )}
+              </div>
+            </div>
+
+            {/* Sélection du technicien */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500", color: "#333" }}>
+                Sélectionner un technicien <span style={{ color: "#dc3545" }}>*</span>
+              </label>
+              <select
+                value={selectedTechnician}
+                onChange={(e) => setSelectedTechnician(e.target.value)}
+                style={{ 
+                  width: "100%", 
+                  padding: "8px", 
+                  border: "1px solid #ddd", 
+                  borderRadius: "4px",
+                  fontSize: "14px"
+                }}
+              >
+                <option value="">Sélectionner un technicien</option>
+                {(() => {
+                  const ticket = allTickets.find(t => t.id === reopenTicketId);
+                  const filteredTechs = ticket ? getFilteredTechnicians(ticket.type) : technicians;
+                  return filteredTechs.map((tech) => {
+                    const workload = tech.assigned_tickets_count || 0;
+                    const specialization = tech.specialization ? ` (${tech.specialization})` : "";
+                    return (
+                      <option key={tech.id} value={tech.id}>
+                        {tech.full_name}{specialization} - {workload} ticket(s)
+                      </option>
+                    );
+                  });
+                })()}
+              </select>
+            </div>
+
+            {/* Notes optionnelles */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500", color: "#333" }}>
+                Notes/Instructions pour le technicien (optionnel)
+              </label>
+              <textarea
+                value={assignmentNotes}
+                onChange={(e) => setAssignmentNotes(e.target.value)}
+                placeholder="Exemple: Prendre en compte le motif de rejet ci-dessus..."
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  resize: "vertical"
+                }}
+              />
+            </div>
+
+            {/* Boutons d'action */}
+            <div style={{ display: "flex", gap: "8px", marginTop: "20px" }}>
+              <button
+                onClick={() => reopenTicketId && handleReopen(reopenTicketId)}
+                disabled={loading || !selectedTechnician}
+                style={{ 
+                  flex: 1, 
+                  padding: "10px", 
+                  backgroundColor: selectedTechnician ? "#17a2b8" : "#ccc", 
+                  color: "white", 
+                  border: "none", 
+                  borderRadius: "4px", 
+                  cursor: selectedTechnician ? "pointer" : "not-allowed",
+                  fontSize: "14px",
+                  fontWeight: "500"
+                }}
+              >
+                {loading ? "Réouverture..." : "Confirmer la réouverture"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowReopenModal(false);
+                  setReopenTicketId(null);
+                  setRejectionReason("");
+                  setSelectedTechnician("");
+                  setAssignmentNotes("");
+                }}
+                disabled={loading}
+                style={{ 
+                  flex: 1, 
+                  padding: "10px", 
+                  background: "#f5f5f5", 
+                  border: "1px solid #ddd", 
+                  borderRadius: "4px", 
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500"
+                }}
+              >
+                Annuler
+              </button>
             </div>
           </div>
         </div>

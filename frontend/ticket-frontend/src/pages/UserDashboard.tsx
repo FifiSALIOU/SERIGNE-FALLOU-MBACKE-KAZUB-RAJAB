@@ -47,13 +47,14 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [validationTicket, setValidationTicket] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>("");
+  const [showRejectionForm, setShowRejectionForm] = useState<boolean>(false);
   const [feedbackTicket, setFeedbackTicket] = useState<string | null>(null);
   const [feedbackScore, setFeedbackScore] = useState<number>(5);
   const [feedbackComment, setFeedbackComment] = useState<string>("");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
-  const [showProfileMenu, setShowProfileMenu] = useState<boolean>(false);
   
   // Mettre à jour le token si le prop change
   useEffect(() => {
@@ -165,7 +166,6 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
     } catch (e) {
       console.error("Erreur lors de la suppression des informations de session:", e);
     }
-    setShowProfileMenu(false);
     setActualToken("");
     window.location.href = "/";
   }
@@ -274,15 +274,26 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
   }
 
   async function handleValidateTicket(ticketId: string, validated: boolean) {
+    // Si rejet, vérifier que le motif est fourni
+    if (!validated && (!rejectionReason || !rejectionReason.trim())) {
+      alert("Veuillez indiquer un motif de rejet");
+      return;
+    }
+
     setLoading(true);
     try {
+      const requestBody: { validated: boolean; rejection_reason?: string } = { validated };
+      if (!validated && rejectionReason) {
+        requestBody.rejection_reason = rejectionReason.trim();
+      }
+
       const res = await fetch(`http://localhost:8000/tickets/${ticketId}/validate`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${actualToken}`,
         },
-        body: JSON.stringify({ validated }),
+        body: JSON.stringify(requestBody),
       });
 
       if (res.ok) {
@@ -290,7 +301,9 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
         await loadNotifications();
         await loadUnreadCount();
         setValidationTicket(null);
-        alert(validated ? "Ticket validé et clôturé avec succès !" : "Ticket rejeté. Il sera réassigné.");
+        setRejectionReason("");
+        setShowRejectionForm(false);
+        alert(validated ? "Ticket validé et clôturé avec succès !" : "Ticket rejeté. Le technicien a été notifié avec le motif.");
       } else {
         const error = await res.json();
         alert(`Erreur: ${error.detail || "Impossible de valider le ticket"}`);
@@ -380,18 +393,35 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
         flexDirection: "column",
         gap: "20px"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "30px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M4 7L12 3L20 7V17L12 21L4 17V7Z" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
-                <path d="M4 7L12 11L20 7" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
-                <path d="M12 11V21" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <div style={{ fontSize: "18px", fontWeight: "600" }}>Gestion d'Incidents</div>
+        {/* User Profile Section */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "20px", paddingBottom: "20px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{
+            width: "60px",
+            height: "60px",
+            borderRadius: "50%",
+            background: "transparent",
+            border: "2px solid rgba(255,255,255,0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "white",
+            fontSize: "20px",
+            fontWeight: "600",
+            marginBottom: "12px"
+          }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))" }}>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="12" cy="7" r="4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </div>
+          <div style={{ fontSize: "16px", fontWeight: "600", color: "white", marginBottom: "4px" }}>
+            {userInfo?.full_name || "Jean Dupont"}
+          </div>
+          <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.7)" }}>
+            Utilisateur
         </div>
+        </div>
+
         <div 
           onClick={() => setActiveSection("dashboard")}
           style={{ 
@@ -399,7 +429,9 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             alignItems: "center", 
             gap: "12px", 
             padding: "12px", 
-            cursor: "pointer"
+            cursor: "pointer",
+            background: activeSection === "dashboard" ? "rgba(59, 130, 246, 0.2)" : "transparent",
+            borderRadius: "8px"
           }}
         >
           <div style={{ 
@@ -410,15 +442,15 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             justifyContent: "center"
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect x="4" y="11" width="3" height="7" rx="1" fill="white" />
-              <rect x="10.5" y="8" width="3" height="10" rx="1" fill="white" />
-              <rect x="17" y="5" width="3" height="13" rx="1" fill="white" />
+              <circle cx="12" cy="12" r="9" stroke="white" strokeWidth="2" fill="none" />
+              <path d="M12 6v6l4 2" stroke="white" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="12" cy="12" r="1" fill="white" />
             </svg>
           </div>
           <div style={{ 
             fontSize: "14px", 
             color: "white"
-          }}>Tableau de Bord</div>
+          }}>Tableau de bord</div>
         </div>
         <div 
           onClick={() => setShowCreateModal(true)}
@@ -444,7 +476,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
           <div style={{ 
             fontSize: "14px", 
             color: "white"
-          }}>Créer un ticket</div>
+          }}>Nouveau ticket</div>
         </div>
         <div 
           onClick={() => {
@@ -469,15 +501,71 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             justifyContent: "center"
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect x="7" y="5" width="10" height="14" rx="2" stroke="white" strokeWidth="1.8" fill="none" />
-              <path d="M10 3h4a1 1 0 0 1 1 1v1H9V4a1 1 0 0 1 1-1z" stroke="white" strokeWidth="1.8" fill="none" />
-              <path d="M10 10h4M10 13h4M10 16h3" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M8 7h8M8 11h8M8 15h6" stroke="white" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </div>
           <div style={{ 
             fontSize: "14px", 
             color: "white"
           }}>Mes tickets</div>
+        </div>
+        <div 
+          onClick={() => {}}
+          style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "12px", 
+            padding: "12px", 
+            cursor: "pointer"
+          }}
+        >
+          <div style={{ 
+            width: "20px", 
+            height: "20px", 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center"
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M9 9h.01M13 9h.01" stroke="white" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="12" cy="12" r="1" fill="white" />
+            </svg>
+          </div>
+          <div style={{ 
+            fontSize: "14px", 
+            color: "white"
+          }}>FAQ & Aide</div>
+        </div>
+        <div 
+          onClick={handleLogout}
+          style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "12px", 
+            padding: "12px", 
+            cursor: "pointer"
+          }}
+        >
+          <div style={{ 
+            width: "20px", 
+            height: "20px", 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center"
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points="16 17 21 12 16 7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <line x1="21" y1="12" x2="9" y2="12" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div style={{ 
+            fontSize: "14px", 
+            color: "white"
+          }}>Déconnexion</div>
         </div>
       </div>
 
@@ -491,25 +579,8 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
           alignItems: "center",
           justifyContent: "flex-end",
           gap: "24px",
-          borderBottom: "1px solid #0f172a"
+          borderBottom: "1px solid rgba(59, 130, 246, 0.2)"
         }}>
-          <div style={{ 
-            cursor: "pointer", 
-            width: "24px", 
-            height: "24px", 
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center",
-            color: "white",
-            fontSize: "20px"
-          }} onClick={() => setShowCreateModal(true)}>
-            +
-          </div>
-          <div style={{ 
-            width: "1px", 
-            height: "24px", 
-            background: "#4b5563" 
-          }}></div>
           <div style={{ 
             cursor: "pointer", 
             width: "28px", 
@@ -587,89 +658,6 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
               </span>
             )}
           </div>
-          <div style={{ 
-            width: "1px", 
-            height: "24px", 
-            background: "#4b5563" 
-          }}></div>
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            gap: "12px",
-            color: "white",
-            position: "relative"
-          }}>
-            <span style={{ fontSize: "14px", fontWeight: "500" }}>
-              {userInfo?.full_name || "Utilisateur"}
-            </span>
-            <div 
-              style={{ position: "relative", cursor: "pointer" }}
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
-            >
-              <div style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "50%",
-                background: "#3b82f6",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                fontSize: "14px",
-                fontWeight: "600"
-              }}>
-                {userInfo?.full_name ? userInfo.full_name.charAt(0).toUpperCase() : "U"}
-              </div>
-              {/* Indicateur de statut vert (en ligne) */}
-              <div style={{
-                position: "absolute",
-                bottom: "0",
-                right: "0",
-                width: "12px",
-                height: "12px",
-                background: "#10b981",
-                borderRadius: "50%",
-                border: "2px solid #374151"
-              }}></div>
-            </div>
-            {showProfileMenu && (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "48px",
-                  background: "white",
-                  borderRadius: "8px",
-                  boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-                  padding: "8px 0",
-                  minWidth: "160px",
-                  zIndex: 50,
-                  color: "#111827"
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  style={{
-                    width: "100%",
-                    padding: "8px 16px",
-                    background: "transparent",
-                    border: "none",
-                    textAlign: "left",
-                    fontSize: "14px",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    color: "#111827"
-                  }}
-                >
-                  <span style={{ fontSize: "16px" }}>⎋</span>
-                  <span>Se déconnecter</span>
-                </button>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Contenu principal avec scroll */}
@@ -678,7 +666,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
           {activeSection === "dashboard" && userInfo && (
             <div style={{ marginBottom: "24px" }}>
               <h2 style={{ fontSize: "28px", fontWeight: "600", color: "#333", margin: 0 }}>
-                Bienvenue, {userInfo.full_name}
+                Bienvenue, {userInfo.full_name} 👋
               </h2>
             </div>
           )}
@@ -738,48 +726,53 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
         {(activeSection === "tickets" || activeSection === "dashboard") && (
           <div ref={ticketsListRef}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3 style={{ fontSize: "24px", fontWeight: "700", color: "#333" }}>Mes Tickets</h3>
-              <button
+              <h3 style={{ fontSize: "24px", fontWeight: "700", color: "#333" }}>
+                {activeSection === "dashboard" ? "Mes Tickets Récents" : "Mes Tickets"}
+              </h3>
+              <div
                 onClick={() => setShowCreateModal(true)}
                 style={{
-                  padding: "12px 24px",
-                  backgroundColor: "#007bff",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
                   cursor: "pointer",
                   fontSize: "14px",
-                  fontWeight: "600"
+                  fontWeight: "500",
+                  color: "#333",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
                 }}
               >
-                Créer un nouveau ticket
-              </button>
+                <span style={{ fontSize: "18px", fontWeight: "600" }}>+</span>
+                <span>Créer un nouveau Ticket</span>
+              </div>
             </div>
             {/* Tickets Table */}
             <div style={{ background: "white", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #dee2e6" }}>
-                <th style={{ padding: "16px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>ID</th>
-                <th style={{ padding: "16px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Titre</th>
-                <th style={{ padding: "16px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Statut</th>
-                <th style={{ padding: "16px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Priorité</th>
-                <th style={{ padding: "16px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Date</th>
-                <th style={{ padding: "16px", textAlign: "left", fontSize: "12px", fontWeight: "600", color: "#666", textTransform: "uppercase" }}>Actions</th>
+              <tr style={{ background: "#9ca3af", borderBottom: "1px solid #6b7280" }}>
+                <th style={{ padding: "16px", textAlign: "left", fontSize: "13px", fontWeight: "700", color: "#333", textTransform: "uppercase", letterSpacing: "0.5px" }}>ID</th>
+                <th style={{ padding: "16px", textAlign: "left", fontSize: "13px", fontWeight: "700", color: "#333", textTransform: "uppercase", letterSpacing: "0.5px" }}>Titre</th>
+                <th style={{ padding: "16px", textAlign: "left", fontSize: "13px", fontWeight: "700", color: "#333", textTransform: "uppercase", letterSpacing: "0.5px" }}>Statut</th>
+                <th style={{ padding: "16px", textAlign: "left", fontSize: "13px", fontWeight: "700", color: "#333", textTransform: "uppercase", letterSpacing: "0.5px" }}>Priorité</th>
+                <th style={{ padding: "16px", textAlign: "left", fontSize: "13px", fontWeight: "700", color: "#333", textTransform: "uppercase", letterSpacing: "0.5px" }}>Date</th>
+                <th style={{ padding: "16px", textAlign: "left", fontSize: "13px", fontWeight: "700", color: "#333", textTransform: "uppercase", letterSpacing: "0.5px" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {tickets.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "#999" }}>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "#999", fontWeight: "500" }}>
                     Aucun ticket créé
                   </td>
                 </tr>
               ) : (
-                tickets.map((t) => (
+                [...tickets]
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .slice(0, activeSection === "dashboard" ? 5 : tickets.length)
+                  .map((t) => (
                   <tr key={t.id} style={{ borderBottom: "1px solid #eee", cursor: "pointer" }}>
-                    <td style={{ padding: "16px", fontWeight: "600", color: "#333" }}>#{t.number}</td>
-                    <td style={{ padding: "16px", color: "#333" }}>{t.title}</td>
+                    <td style={{ padding: "16px", color: "#333", fontSize: "14px" }}>#{t.number}</td>
+                    <td style={{ padding: "16px", color: "#333", fontSize: "14px" }}>{t.title}</td>
                     <td style={{ padding: "16px" }}>
                       <span style={{
                         padding: "6px 12px",
@@ -787,7 +780,9 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                         fontSize: "12px",
                         fontWeight: "500",
                         background: t.status === "en_attente_analyse" ? "#ffc107" : t.status === "assigne_technicien" ? "#007bff" : t.status === "en_cours" ? "#ff9800" : t.status === "resolu" ? "#28a745" : t.status === "cloture" ? "#6c757d" : "#dc3545",
-                        color: "white"
+                        color: "white",
+                        whiteSpace: "nowrap",
+                        display: "inline-block"
                       }}>
                         {t.status === "en_attente_analyse" ? "En attente d'analyse" :
                          t.status === "assigne_technicien" ? "Assigné au technicien" :
@@ -809,7 +804,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                         {t.priority}
                       </span>
                     </td>
-                    <td style={{ padding: "16px", fontSize: "14px", color: "#666" }}>
+                    <td style={{ padding: "16px", fontSize: "14px", color: "#333" }}>
                       {formatDate(t.assigned_at || t.created_at)}
                     </td>
                     <td style={{ padding: "16px" }}>
@@ -817,14 +812,24 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                         {t.status === "resolu" ? (
                           <div style={{ display: "flex", gap: "4px" }}>
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleValidateTicket(t.id, true); }}
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setValidationTicket(t.id);
+                                setShowRejectionForm(false);
+                                setRejectionReason("");
+                              }}
                               disabled={loading}
                               style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#28a745", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
                             >
                               Valider
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleValidateTicket(t.id, false); }}
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setValidationTicket(t.id);
+                                setShowRejectionForm(true);
+                                setRejectionReason("");
+                              }}
                               disabled={loading}
                               style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#dc3545", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
                             >
@@ -1026,6 +1031,8 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                     maxWidth: "500px",
                     width: "90%"
                   }}>
+                    {!showRejectionForm ? (
+                      <>
                     <h3 style={{ marginBottom: "16px" }}>Valider la résolution</h3>
                     <p style={{ marginBottom: "16px", color: "#666" }}>
                       Le problème a-t-il été résolu de manière satisfaisante ?
@@ -1039,19 +1046,93 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                         Oui, valider
                       </button>
                       <button
-                        onClick={() => handleValidateTicket(validationTicket, false)}
+                            onClick={() => {
+                              setShowRejectionForm(true);
+                              setRejectionReason("");
+                            }}
                         disabled={loading}
                         style={{ flex: 1, padding: "10px", backgroundColor: "#dc3545", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
                       >
                         Non, rejeter
                       </button>
                       <button
-                        onClick={() => setValidationTicket(null)}
+                            onClick={() => {
+                              setValidationTicket(null);
+                              setShowRejectionForm(false);
+                              setRejectionReason("");
+                            }}
                         style={{ flex: 1, padding: "10px", background: "#f5f5f5", border: "1px solid #ddd", borderRadius: "4px", cursor: "pointer" }}
                       >
                         Annuler
                       </button>
                     </div>
+                      </>
+                    ) : (
+                      <>
+                        <h3 style={{ marginBottom: "16px", color: "#dc3545" }}>Rejeter la résolution</h3>
+                        <p style={{ marginBottom: "16px", color: "#666" }}>
+                          Veuillez indiquer le motif de rejet. Cette information sera transmise au technicien pour l'aider à mieux résoudre votre problème.
+                        </p>
+                        <div style={{ marginBottom: "16px" }}>
+                          <label style={{ display: "block", marginBottom: "8px", fontWeight: "500", color: "#333" }}>
+                            Motif de rejet <span style={{ color: "#dc3545" }}>*</span>
+                          </label>
+                          <textarea
+                            value={rejectionReason}
+                            onChange={(e) => setRejectionReason(e.target.value)}
+                            placeholder="Exemple: Le problème persiste toujours, la solution proposée ne fonctionne pas, j'ai besoin de plus d'informations..."
+                            rows={4}
+                            required
+                            style={{
+                              width: "100%",
+                              padding: "10px",
+                              border: "1px solid #ddd",
+                              borderRadius: "4px",
+                              fontSize: "14px",
+                              resize: "vertical",
+                              fontFamily: "inherit"
+                            }}
+                          />
+                  </div>
+                        <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
+                          <button
+                            onClick={() => handleValidateTicket(validationTicket, false)}
+                            disabled={loading || !rejectionReason.trim()}
+                            style={{ 
+                              flex: 1, 
+                              padding: "10px", 
+                              backgroundColor: rejectionReason.trim() ? "#dc3545" : "#ccc", 
+                              color: "white", 
+                              border: "none", 
+                              borderRadius: "4px", 
+                              cursor: rejectionReason.trim() ? "pointer" : "not-allowed" 
+                            }}
+                          >
+                            Confirmer le rejet
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowRejectionForm(false);
+                              setRejectionReason("");
+                            }}
+                            disabled={loading}
+                            style={{ flex: 1, padding: "10px", background: "#f5f5f5", border: "1px solid #ddd", borderRadius: "4px", cursor: "pointer" }}
+                          >
+                            Retour
+                          </button>
+                          <button
+                            onClick={() => {
+                              setValidationTicket(null);
+                              setShowRejectionForm(false);
+                              setRejectionReason("");
+                            }}
+                            style={{ flex: 1, padding: "10px", background: "#f5f5f5", border: "1px solid #ddd", borderRadius: "4px", cursor: "pointer" }}
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
         )}

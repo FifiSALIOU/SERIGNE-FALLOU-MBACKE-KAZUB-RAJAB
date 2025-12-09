@@ -1,0 +1,22 @@
+# Ajoutez ces lignes à la fin de votre fichier .env existant :
+
+# Configuration SMTP pour l'envoi d'emails
+# Activer/désactiver l'envoi d'emails (true/false)
+EMAIL_ENABLED=true
+
+# Serveur SMTP
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+
+# Authentification SMTP
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+
+# Expéditeur
+SENDER_EMAIL=tickets@entreprise.com
+SENDER_NAME=Système de Gestion des Tickets
+
+# Options de sécurité
+USE_TLS=true
+VERIFY_SSL=true
+

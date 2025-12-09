@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import auth, tickets, users, notifications
+from .routers import auth, tickets, users, notifications, settings
 
 
 def create_app() -> FastAPI:
@@ -27,6 +27,7 @@ def create_app() -> FastAPI:
     app.include_router(tickets.router, prefix="/tickets", tags=["tickets"])
     app.include_router(users.router, prefix="/users", tags=["users"])
     app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+    app.include_router(settings.router, tags=["settings"])
 
     return app
 
