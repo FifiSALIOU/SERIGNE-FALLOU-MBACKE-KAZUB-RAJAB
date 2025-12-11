@@ -37,6 +37,16 @@ interface Ticket {
   attachments?: any;
 }
 
+interface TicketHistory {
+  id: string;
+  ticket_id: string;
+  old_status?: string | null;
+  new_status: string;
+  user_id: string;
+  reason?: string | null;
+  changed_at: string;
+}
+
 function TechnicianDashboard({ token }: TechnicianDashboardProps) {
   const [allTickets, setAllTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,6 +62,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [userInfo, setUserInfo] = useState<UserRead | null>(null);
   const [ticketDetails, setTicketDetails] = useState<Ticket | null>(null);
+  const [ticketHistory, setTicketHistory] = useState<TicketHistory[]>([]);
   const [activeSection, setActiveSection] = useState<string>("dashboard");
   const [availabilityStatus, setAvailabilityStatus] = useState<string>("disponible");
   const [updatingStatus, setUpdatingStatus] = useState<boolean>(false);
@@ -221,6 +232,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
       if (res.ok) {
         const data = await res.json();
         setTicketDetails(data);
+        await loadTicketHistory(ticketId);
         setViewTicketDetails(ticketId);
       } else {
         alert("Erreur lors du chargement des détails du ticket");
@@ -228,6 +240,24 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
     } catch (err) {
       console.error("Erreur chargement détails:", err);
       alert("Erreur lors du chargement des détails");
+    }
+  }
+
+  async function loadTicketHistory(ticketId: string) {
+    try {
+      const res = await fetch(`http://localhost:8000/tickets/${ticketId}/history`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTicketHistory(Array.isArray(data) ? data : []);
+      } else {
+        setTicketHistory([]);
+      }
+    } catch {
+      setTicketHistory([]);
     }
   }
 
@@ -1275,11 +1305,35 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
               </div>
             )}
 
+            <div style={{ marginTop: "16px" }}>
+              <strong>Historique :</strong>
+              <div style={{ marginTop: "8px" }}>
+                {ticketHistory.length === 0 ? (
+                  <p style={{ color: "#999", fontStyle: "italic" }}>Aucun historique</p>
+                ) : (
+                  ticketHistory.map((h) => (
+                    <div key={h.id} style={{ padding: "8px", marginTop: "4px", background: "#f8f9fa", borderRadius: "4px" }}>
+                      <div style={{ fontSize: "12px", color: "#555" }}>
+                        {new Date(h.changed_at).toLocaleString("fr-FR")}
+                      </div>
+                      <div style={{ marginTop: "4px", fontWeight: 500 }}>
+                        {h.old_status ? `${h.old_status} → ${h.new_status}` : h.new_status}
+                      </div>
+                      {h.reason && (
+                        <div style={{ marginTop: "4px", color: "#666" }}>{h.reason}</div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
             <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
               <button
                 onClick={() => {
                   setViewTicketDetails(null);
                   setTicketDetails(null);
+                  setTicketHistory([]);
                 }}
                 style={{ flex: 1, padding: "10px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
               >
