@@ -557,7 +557,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
           <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             {/* Partie gauche - Titre */}
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div style={{ fontSize: "18px", fontWeight: "600", color: "white" }}>Tableau de bord - Technicien</div>
+              <div style={{ fontSize: "18px", fontWeight: "600", color: "white" }}> </div>
             </div>
             
             {/* Partie droite - Actions */}
@@ -739,6 +739,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             {activeSection === "dashboard" && (
               <>
                 <h2>Tableau de bord - Technicien</h2>
+
 
                 <div style={{ display: "flex", gap: "16px", margin: "24px 0" }}>
                   <div style={{ padding: "16px", background: "white", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", flex: 1 }}>
