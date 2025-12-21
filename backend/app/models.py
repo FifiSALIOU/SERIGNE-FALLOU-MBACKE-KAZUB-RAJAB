@@ -107,6 +107,7 @@ class Ticket(Base):
     assigned_at = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
     closed_at = Column(DateTime, nullable=True)
+    auto_closed_at = Column(DateTime, nullable=True)  # Date de clôture automatique (si applicable)
 
     attachments = Column(JSONB, nullable=True)
     feedback_score = Column(Integer, nullable=True)
@@ -165,6 +166,16 @@ class NotificationType(str, PyEnum):
     DEMANDE_VALIDATION = "demande_validation"
     TICKET_CLOTURE = "ticket_clôturé"
     RAPPEL = "rappel"
+    TICKET_EN_COURS = "ticket_en_cours"
+    TICKET_REJETE = "ticket_rejeté"
+    PRIORITE_MODIFIEE = "priorité_modifiée"
+    TECHNICIEN_CHANGE = "technicien_change"
+    TICKET_REOUVERT = "ticket_réouvert"
+    CLOTURE_AUTOMATIQUE = "clôture_automatique"
+    RAPPEL_VALIDATION_1 = "rappel_validation_1"
+    RAPPEL_VALIDATION_2 = "rappel_validation_2"
+    RAPPEL_VALIDATION_3 = "rappel_validation_3"
+    ESCALADE_USER = "escalade_user"
     
     # Notifications secrétaire/adjoint
     NOUVEAU_TICKET = "nouveau_ticket"

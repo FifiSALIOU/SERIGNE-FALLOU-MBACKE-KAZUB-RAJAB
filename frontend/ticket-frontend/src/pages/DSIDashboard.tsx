@@ -46,6 +46,7 @@ interface Ticket {
   technician?: {
     full_name: string;
   };
+  secretary_id?: string | null;  // ID de l'adjoint DSI auquel le ticket est délégué
   created_at?: string;
   resolved_at?: string | null;
   closed_at?: string | null;
@@ -97,6 +98,7 @@ interface TicketHistory {
 }
 
 interface UserRead {
+  id?: string;  // ID de l'utilisateur connecté
   full_name: string;
   email: string;
   agency?: string | null;
@@ -241,10 +243,13 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     userSatisfaction: null,
   });
   const [techniciansSatisfaction, setTechniciansSatisfaction] = useState<string>("0.0");
+  const [reopenedTicketsCount, setReopenedTicketsCount] = useState<number>(0);
+  const [reopeningCalculated, setReopeningCalculated] = useState<boolean>(false);
   const [activeSection, setActiveSection] = useState<string>("dashboard");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [agencyFilter, setAgencyFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [delegationFilter, setDelegationFilter] = useState<string>("all");
   const [showReportsDropdown, setShowReportsDropdown] = useState<boolean>(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -256,6 +261,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [userInfo, setUserInfo] = useState<UserRead | null>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [delegatedTicketsByMe, setDelegatedTicketsByMe] = useState<Set<string>>(new Set());
   const [userRoleFilter, setUserRoleFilter] = useState<string>("all");
   const [userStatusFilter, setUserStatusFilter] = useState<string>("all");
   const [userAgencyFilter, setUserAgencyFilter] = useState<string>("all");
@@ -1120,8 +1126,66 @@ function DSIDashboard({ token }: DSIDashboardProps) {
   useEffect(() => {
     async function loadData() {
       try {
+        // Charger les informations de l'utilisateur connecté en premier
+        const meRes = await fetch("http://localhost:8000/auth/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        let currentUserInfo: any = null;
+        let currentUserRole: string = "";
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          currentUserInfo = {
+            id: meData.id,
+            full_name: meData.full_name,
+            email: meData.email,
+            agency: meData.agency
+          };
+          setUserInfo(currentUserInfo);
+          if (meData.role && meData.role.name) {
+            currentUserRole = meData.role.name;
+            setUserRole(currentUserRole);
+            
+            // Charger tous les utilisateurs (si Admin ou DSI)
+            if (meData.role.name === "Admin" || meData.role.name === "DSI") {
+              try {
+                const usersRes = await fetch("http://localhost:8000/users/", {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                });
+                if (usersRes.ok) {
+                  const usersData = await usersRes.json();
+                  setAllUsers(usersData || []);
+                } else {
+                  console.error("Erreur chargement utilisateurs:", usersRes.status);
+                  setAllUsers([]);
+                }
+              } catch (err) {
+                console.error("Erreur chargement utilisateurs:", err);
+                setAllUsers([]);
+              }
+            }
+          }
+        }
+
         // Charger tous les tickets
-        await loadTickets();
+        let ticketsData: Ticket[] = [];
+        const ticketsRes = await fetch("http://localhost:8000/tickets/", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (ticketsRes.ok) {
+          ticketsData = await ticketsRes.json();
+          setAllTickets(ticketsData);
+          // Calculer les métriques
+          const openCount = ticketsData.filter((t: Ticket) => 
+            t.status !== "cloture" && t.status !== "resolu"
+          ).length;
+          setMetrics(prev => ({ ...prev, openTickets: openCount }));
+        }
 
         // Charger la liste des techniciens avec leurs stats
         const techRes = await fetch("http://localhost:8000/users/technicians", {
@@ -1153,43 +1217,81 @@ function DSIDashboard({ token }: DSIDashboardProps) {
           setTechnicians(techsWithStats);
         }
 
-        // Charger les informations de l'utilisateur connecté
-        const meRes = await fetch("http://localhost:8000/auth/me", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (meRes.ok) {
-          const meData = await meRes.json();
-          setUserInfo({
-            full_name: meData.full_name,
-            email: meData.email,
-            agency: meData.agency
-          });
-          if (meData.role && meData.role.name) {
-            setUserRole(meData.role.name);
-            
-            // Charger tous les utilisateurs (si Admin ou DSI)
-            if (meData.role.name === "Admin" || meData.role.name === "DSI") {
-              try {
-                const usersRes = await fetch("http://localhost:8000/users/", {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
+        // Identifier les tickets délégués par le DSI connecté
+        if (currentUserRole === "DSI" && currentUserInfo?.id && ticketsData && ticketsData.length > 0) {
+          const delegatedTickets = ticketsData.filter((t: Ticket) => t.secretary_id !== null && t.secretary_id !== undefined);
+          const ticketsDelegatedByMe = new Set<string>();
+          
+          // Vérifier l'historique de chaque ticket délégué pour voir s'il a été délégué par le DSI connecté
+          for (const ticket of delegatedTickets) {
+            try {
+              const historyRes = await fetch(`http://localhost:8000/tickets/${ticket.id}/history`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (historyRes.ok) {
+                const history: TicketHistory[] = await historyRes.json();
+                // Chercher dans l'historique si le ticket a été délégué par le DSI connecté
+                // On cherche une entrée d'historique où le user_id correspond au DSI connecté
+                // et où il y a une mention de délégation (dans le reason) ou où le statut a été changé vers "en_attente_analyse" 
+                // (car lors de la délégation, le statut est mis à "en_attente_analyse")
+                // Comparer les IDs en tant que strings pour éviter les problèmes de type
+                const dsiIdStr = String(currentUserInfo.id);
+                
+                const delegationEntry = history.find((h: TicketHistory) => {
+                  // Vérifier que c'est bien le DSI connecté qui a fait l'action
+                  const userIdMatches = String(h.user_id) === dsiIdStr;
+                  if (!userIdMatches) return false;
+                  
+                  // Vérifier si le reason contient des mots-clés de délégation
+                  const reasonLower = (h.reason || "").toLowerCase();
+                  if (reasonLower.includes("délégu") || 
+                      reasonLower.includes("delegat") ||
+                      reasonLower.includes("adjoint") ||
+                      reasonLower.includes("délégation")) {
+                    return true;
+                  }
+                  
+                  return false;
                 });
-                if (usersRes.ok) {
-                  const usersData = await usersRes.json();
-                  setAllUsers(usersData || []);
+                
+                if (delegationEntry) {
+                  ticketsDelegatedByMe.add(ticket.id);
                 } else {
-                  console.error("Erreur chargement utilisateurs:", usersRes.status);
-                  setAllUsers([]);
+                  // Si on ne trouve pas d'entrée d'historique avec les mots-clés de délégation,
+                  // on vérifie s'il y a une entrée d'historique récente où le DSI connecté a modifié le ticket
+                  // et où le statut est "en_attente_analyse" (car lors de la délégation, le statut est mis à "en_attente_analyse")
+                  const entryByDSI = history.find((h: TicketHistory) => 
+                    String(h.user_id) === dsiIdStr && 
+                    h.new_status === "en_attente_analyse"
+                  );
+                  
+                  if (entryByDSI) {
+                    // Si le DSI connecté a mis le ticket en "en_attente_analyse" et que le ticket a un secretary_id,
+                    // c'est probablement une délégation (selon le code backend ligne 1083-1084)
+                    ticketsDelegatedByMe.add(ticket.id);
+                  } else {
+                    // Log pour déboguer : pourquoi ce ticket n'est-il pas considéré comme délégué ?
+                    console.log(`Ticket ${ticket.id} non ajouté:`, {
+                      ticketSecretaryId: ticket.secretary_id,
+                      dsiId: currentUserInfo.id,
+                      historyEntries: history.length,
+                      entriesByDSI: history.filter(h => String(h.user_id) === dsiIdStr).length,
+                      reasons: history.filter(h => String(h.user_id) === dsiIdStr).map(h => h.reason)
+                    });
+                  }
                 }
-              } catch (err) {
-                console.error("Erreur chargement utilisateurs:", err);
-                setAllUsers([]);
+              } else {
+                console.error(`Erreur HTTP lors du chargement de l'historique du ticket ${ticket.id}: ${historyRes.status}`);
               }
+            } catch (err) {
+              console.error(`Erreur lors du chargement de l'historique du ticket ${ticket.id}:`, err);
             }
           }
+          setDelegatedTicketsByMe(ticketsDelegatedByMe);
+          console.log(`Tickets délégués par le DSI connecté (${currentUserInfo.id}): ${ticketsDelegatedByMe.size} sur ${delegatedTickets.length} tickets avec secretary_id`);
+        } else if (currentUserRole === "DSI" && currentUserInfo?.id) {
+          // Si on n'a pas de tickets ou si currentUserInfo.id n'est pas défini, initialiser avec un Set vide
+          setDelegatedTicketsByMe(new Set());
         }
 
         // Calculer les métriques à partir des tickets existants (après chargement)
@@ -1419,7 +1521,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
             // car la satisfaction mesure la qualité du service rendu, qui n'est complète qu'après résolution
             
             const avgResolutionHours = resolvedCount > 0 ? totalResolutionTimeHours / resolvedCount : 0;
-            const avgResolutionTimeFormatted = resolvedCount > 0 ? formatTimeInHoursMinutes(avgResolutionHours) : "0 mn";
+            const avgResolutionTimeFormatted = resolvedCount > 0 ? formatTimeInHoursMinutes(avgResolutionHours) : null;
             
             // Calculer la satisfaction moyenne (tous les tickets)
             let satisfactionPct: string | null = null;
@@ -1436,32 +1538,33 @@ function DSIDashboard({ token }: DSIDashboardProps) {
             }
             
             // Mettre à jour les métriques (en conservant openTickets déjà calculé)
+            // Ne mettre à jour que si on a calculé de nouvelles valeurs valides
             setMetrics(prev => ({
               ...prev,
-              avgResolutionTime: avgResolutionTimeFormatted,
-              userSatisfaction: satisfactionPct !== null ? `${satisfactionPct}%` : null,
+              avgResolutionTime: avgResolutionTimeFormatted ?? prev.avgResolutionTime,
+              userSatisfaction: satisfactionPct !== null ? `${satisfactionPct}%` : prev.userSatisfaction,
             }));
             
             // Mettre à jour la satisfaction moyenne des techniciens
             setTechniciansSatisfaction(techniciansSatisfactionPct);
           } else {
-            // Si aucun ticket, mettre les valeurs à zéro
+            // Si aucun ticket, garder "Chargement..." ou les valeurs précédentes (ne pas mettre "0")
             setMetrics(prev => ({
               ...prev,
-              avgResolutionTime: "0 mn",
-              userSatisfaction: "0%",
+              avgResolutionTime: prev.avgResolutionTime ?? null,
+              userSatisfaction: prev.userSatisfaction ?? null,
             }));
-            setTechniciansSatisfaction("0.0");
+            // Ne pas modifier techniciansSatisfaction si on n'a pas de données
           }
         } catch (err) {
           console.log("Erreur calcul métriques:", err);
-          // En cas d'erreur, mettre les valeurs par défaut
+          // En cas d'erreur, garder les valeurs précédentes (ne pas mettre "0")
           setMetrics(prev => ({
             ...prev,
-            avgResolutionTime: "0 minutes",
-            userSatisfaction: "0%",
+            avgResolutionTime: prev.avgResolutionTime ?? null,
+            userSatisfaction: prev.userSatisfaction ?? null,
           }));
-          setTechniciansSatisfaction("0.0");
+          // Ne pas modifier techniciansSatisfaction en cas d'erreur
         }
 
          // Charger les notifications
@@ -1483,6 +1586,67 @@ function DSIDashboard({ token }: DSIDashboardProps) {
      
      return () => clearInterval(interval);
   }, [token]);
+
+  // Recalculer les tickets délégués quand allTickets ou userInfo change
+  useEffect(() => {
+    async function recalculateDelegatedTickets() {
+      if (userRole === "DSI" && userInfo?.id && allTickets && allTickets.length > 0) {
+        const delegatedTickets = allTickets.filter((t: Ticket) => t.secretary_id !== null && t.secretary_id !== undefined);
+        const ticketsDelegatedByMe = new Set<string>();
+        const dsiIdStr = String(userInfo.id);
+        
+        // Vérifier l'historique de chaque ticket délégué
+        for (const ticket of delegatedTickets) {
+          try {
+            const historyRes = await fetch(`http://localhost:8000/tickets/${ticket.id}/history`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (historyRes.ok) {
+              const history: TicketHistory[] = await historyRes.json();
+              
+              const delegationEntry = history.find((h: TicketHistory) => {
+                const userIdMatches = String(h.user_id) === dsiIdStr;
+                if (!userIdMatches) return false;
+                
+                const reasonLower = (h.reason || "").toLowerCase();
+                if (reasonLower.includes("délégu") || 
+                    reasonLower.includes("delegat") ||
+                    reasonLower.includes("adjoint") ||
+                    reasonLower.includes("délégation")) {
+                  return true;
+                }
+                
+                return false;
+              });
+              
+              if (delegationEntry) {
+                ticketsDelegatedByMe.add(ticket.id);
+              } else {
+                // Fallback: vérifier si le DSI a mis le ticket en "en_attente_analyse"
+                const entryByDSI = history.find((h: TicketHistory) => 
+                  String(h.user_id) === dsiIdStr && 
+                  h.new_status === "en_attente_analyse"
+                );
+                
+                if (entryByDSI) {
+                  ticketsDelegatedByMe.add(ticket.id);
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`Erreur lors du chargement de l'historique du ticket ${ticket.id}:`, err);
+          }
+        }
+        
+        setDelegatedTicketsByMe(ticketsDelegatedByMe);
+        console.log(`[Recalcul] Tickets délégués par le DSI (${userInfo.id}): ${ticketsDelegatedByMe.size} sur ${delegatedTickets.length} tickets avec secretary_id`);
+      } else if (userRole === "DSI" && userInfo?.id && (!allTickets || allTickets.length === 0)) {
+        setDelegatedTicketsByMe(new Set());
+      }
+    }
+    
+    void recalculateDelegatedTickets();
+  }, [allTickets, userInfo, userRole, token]);
 
   // Recalculer les métriques quand allTickets change (quand un ticket est traité)
   useEffect(() => {
@@ -1668,25 +1832,33 @@ function DSIDashboard({ token }: DSIDashboardProps) {
         );
         
         const avgResolutionHours = resolvedCount > 0 ? totalResolutionTimeHours / resolvedCount : 0;
-        const avgResolutionTimeFormatted = resolvedCount > 0 ? formatTimeInHoursMinutes(avgResolutionHours) : "0 mn";
+        // Ne mettre à jour que si on a des données valides (ne pas mettre "0 mn")
+        const avgResolutionTimeFormatted = resolvedCount > 0 ? formatTimeInHoursMinutes(avgResolutionHours) : null;
         let satisfactionPct: string | null = null;
         if (satisfactionScores.length > 0) {
           const avgSatisfaction = satisfactionScores.reduce((sum, score) => sum + score, 0) / satisfactionScores.length;
           satisfactionPct = avgSatisfaction.toFixed(1);
         }
         
-        let techniciansSatisfactionPct = "0.0";
+        // Ne mettre à jour techniciansSatisfaction que si on a des données valides
+        let techniciansSatisfactionPct: string | null = null;
         if (techniciansSatisfactionScores.length > 0) {
           const avgTechniciansSatisfaction = techniciansSatisfactionScores.reduce((sum, score) => sum + score, 0) / techniciansSatisfactionScores.length;
           techniciansSatisfactionPct = avgTechniciansSatisfaction.toFixed(1);
         }
         
-        setMetrics(prev => ({
-          ...prev,
-          avgResolutionTime: avgResolutionTimeFormatted,
-          userSatisfaction: satisfactionPct !== null ? `${satisfactionPct}%` : null,
-        }));
-        setTechniciansSatisfaction(techniciansSatisfactionPct);
+        // Mettre à jour seulement si on a calculé de nouvelles valeurs valides
+        if (avgResolutionTimeFormatted !== null || satisfactionPct !== null) {
+          setMetrics(prev => ({
+            ...prev,
+            avgResolutionTime: avgResolutionTimeFormatted ?? prev.avgResolutionTime,
+            userSatisfaction: satisfactionPct !== null ? `${satisfactionPct}%` : prev.userSatisfaction,
+          }));
+        }
+        // Ne mettre à jour techniciansSatisfaction que si on a une nouvelle valeur valide
+        if (techniciansSatisfactionPct !== null) {
+          setTechniciansSatisfaction(techniciansSatisfactionPct);
+        }
       } catch (err) {
         console.error("Erreur recalcul métriques:", err);
       }
@@ -1694,6 +1866,57 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     
     void recalculateMetrics();
   }, [allTickets, token]);
+
+  // Calculer le taux de réouverture quand on est dans la section métriques
+  useEffect(() => {
+    if (selectedReport === "metriques" && !reopeningCalculated && allTickets.length > 0) {
+      const checkReopenedTickets = async () => {
+        let reopenedCount = 0;
+        const resolvedTickets = allTickets.filter(t => t.status === "resolu" || t.status === "cloture");
+        
+        // Vérifier tous les tickets pour voir s'ils ont été réouverts
+        await Promise.all(
+          allTickets.map(async (ticket) => {
+            try {
+              const historyRes = await fetch(`http://localhost:8000/tickets/${ticket.id}/history`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (historyRes.ok) {
+                const history: TicketHistory[] = await historyRes.json();
+                // Vérifier si le ticket a été résolu/clôturé puis réouvert
+                const resolutionIndex = history.findIndex(h => 
+                  h.new_status === "resolu" || h.new_status === "cloture"
+                );
+                if (resolutionIndex >= 0) {
+                  // Vérifier s'il y a un changement de statut après la résolution
+                  const afterResolution = history.slice(resolutionIndex + 1);
+                  if (afterResolution.length > 0 && 
+                      afterResolution.some(h => 
+                        h.new_status !== "resolu" && h.new_status !== "cloture"
+                      )) {
+                    reopenedCount++;
+                  }
+                }
+              }
+            } catch (err) {
+              console.error(`Erreur historique ticket ${ticket.id}:`, err);
+            }
+          })
+        );
+        
+        setReopenedTicketsCount(reopenedCount);
+        setReopeningCalculated(true);
+      };
+      
+      void checkReopenedTickets();
+    }
+    
+    // Réinitialiser quand on change de section
+    if (selectedReport !== "metriques") {
+      setReopeningCalculated(false);
+      setReopenedTicketsCount(0);
+    }
+  }, [selectedReport, allTickets, token, reopeningCalculated]);
 
   // Mettre à jour l'heure actuelle toutes les minutes pour recalculer le statut de disponibilité
   useEffect(() => {
@@ -2601,6 +2824,714 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     try {
       if (selectedReport === "recurrents") {
         exportProblemsHistoryToPDF(reportName);
+      } else if (selectedReport === "statistiques") {
+        // Export spécifique pour Statistiques générales
+        const doc = new jsPDF();
+        let yPos = 20;
+        
+        // En-tête
+        doc.setFontSize(16);
+        doc.text(`Rapport: ${reportName}`, 14, yPos);
+        yPos += 10;
+        doc.setFontSize(12);
+        doc.text(`Date de génération: ${new Date().toLocaleDateString('fr-FR')}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Généré par: ${userInfo?.full_name || 'Utilisateur'}`, 14, yPos);
+        yPos += 15;
+        
+        // Métriques principales
+        doc.setFontSize(14);
+        doc.text("Métriques principales", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        doc.text(`Nombre total de tickets: ${allTickets.length}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Tickets résolus/clôturés: ${resolvedCount + closedCount}`, 14, yPos);
+        yPos += 15;
+        
+        // Répartition par statut
+        doc.setFontSize(14);
+        doc.text("Répartition par statut", 14, yPos);
+        yPos += 10;
+        
+        const statusData = [
+          ["Statut", "Nombre", "Pourcentage"],
+          ["En attente", pendingCount.toString(), allTickets.length > 0 ? ((pendingCount / allTickets.length) * 100).toFixed(1) + "%" : "0%"],
+          ["Assignés/En cours", assignedCount.toString(), allTickets.length > 0 ? ((assignedCount / allTickets.length) * 100).toFixed(1) + "%" : "0%"],
+          ["Résolus", resolvedCount.toString(), allTickets.length > 0 ? ((resolvedCount / allTickets.length) * 100).toFixed(1) + "%" : "0%"],
+          ["Clôturés", closedCount.toString(), allTickets.length > 0 ? ((closedCount / allTickets.length) * 100).toFixed(1) + "%" : "0%"],
+          ["Rejetés", rejectedTickets.length.toString(), allTickets.length > 0 ? ((rejectedTickets.length / allTickets.length) * 100).toFixed(1) + "%" : "0%"]
+        ];
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [statusData[0]],
+          body: statusData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [0, 123, 255] },
+          styles: { fontSize: 10 }
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Répartition par priorité
+        doc.setFontSize(14);
+        doc.text("Répartition par priorité", 14, yPos);
+        yPos += 10;
+        
+        const priorityData = [
+          ["Priorité", "Nombre", "Pourcentage"]
+        ];
+        
+        ["critique", "haute", "moyenne", "faible"].forEach((priority) => {
+          const count = allTickets.filter((t) => t.priority === priority).length;
+          priorityData.push([
+            priority.charAt(0).toUpperCase() + priority.slice(1),
+            count.toString(),
+            allTickets.length > 0 ? ((count / allTickets.length) * 100).toFixed(1) + "%" : "0%"
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [priorityData[0]],
+          body: priorityData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [40, 167, 69] },
+          styles: { fontSize: 10 }
+        });
+        
+        doc.save(`Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+      } else if (selectedReport === "metriques") {
+        // Export spécifique pour Métriques de performance
+        const doc = new jsPDF();
+        let yPos = 20;
+        
+        // En-tête
+        doc.setFontSize(16);
+        doc.text(`Rapport: ${reportName}`, 14, yPos);
+        yPos += 10;
+        doc.setFontSize(12);
+        doc.text(`Date de génération: ${new Date().toLocaleDateString('fr-FR')}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Généré par: ${userInfo?.full_name || 'Utilisateur'}`, 14, yPos);
+        yPos += 15;
+        
+        // Calculer les métriques principales (identique au calcul dans l'interface)
+        const avgResolutionTimeDisplay = metrics.avgResolutionTime ?? "N/A";
+        const resolvedTickets = allTickets.filter(t => t.status === "resolu" || t.status === "cloture");
+        
+        // Taux de satisfaction
+        const ticketsWithFeedback = resolvedTickets.filter(t => t.feedback_score !== null && t.feedback_score !== undefined);
+        const avgFeedback = ticketsWithFeedback.length > 0 
+          ? ticketsWithFeedback.reduce((sum, t) => sum + (t.feedback_score || 0), 0) / ticketsWithFeedback.length
+          : null;
+        const rejectedTicketsRpt = allTickets.filter(t => t.status === "rejete");
+        const resolvedCountRpt = resolvedTickets.length;
+        const rejectedCountRpt = rejectedTicketsRpt.length;
+        const denomRpt = resolvedCountRpt + rejectedCountRpt;
+        let satisfactionRate = 0;
+        if (avgFeedback !== null) {
+          satisfactionRate = (avgFeedback / 5) * 100;
+        } else if (denomRpt > 0) {
+          satisfactionRate = (resolvedCountRpt / denomRpt) * 100;
+        }
+        
+        // Tickets escaladés
+        const escalatedTickets = allTickets.filter((t) => 
+          t.priority === "critique" && 
+          (t.status === "en_attente_analyse" || t.status === "assigne_technicien" || t.status === "en_cours")
+        ).length;
+        
+        // Taux de réouverture
+        const totalResolvedOrClosed = resolvedTickets.length;
+        const reopeningRate = totalResolvedOrClosed > 0 
+          ? ((reopenedTicketsCount / totalResolvedOrClosed) * 100).toFixed(1) 
+          : "0.0";
+        
+        // Volume de tickets - Ce mois
+        const now = new Date();
+        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        
+        const thisMonthTickets = allTickets.filter(t => {
+          if (!t.created_at) return false;
+          const created = new Date(t.created_at);
+          return created >= currentMonthStart;
+        });
+        
+        const lastMonthTickets = allTickets.filter(t => {
+          if (!t.created_at) return false;
+          const created = new Date(t.created_at);
+          return created >= lastMonthStart && created <= lastMonthEnd;
+        });
+        
+        const thisMonthResolved = thisMonthTickets.filter(t => t.status === "resolu" || t.status === "cloture").length;
+        const thisMonthCreated = thisMonthTickets.length;
+        const thisMonthPending = thisMonthTickets.filter(t => 
+          t.status !== "resolu" && t.status !== "cloture" && t.status !== "rejete"
+        ).length;
+        
+        const lastMonthCreated = lastMonthTickets.length;
+        const createdChange = lastMonthCreated > 0 
+          ? ((thisMonthCreated - lastMonthCreated) / lastMonthCreated * 100).toFixed(0)
+          : "0";
+        const resolutionRate = thisMonthCreated > 0 
+          ? ((thisMonthResolved / thisMonthCreated) * 100).toFixed(0)
+          : "0";
+        const pendingRate = thisMonthCreated > 0 
+          ? ((thisMonthPending / thisMonthCreated) * 100).toFixed(0)
+          : "0";
+        
+        // Performance par catégorie
+        const materielTickets = resolvedTickets.filter(t => t.type === "materiel");
+        const applicatifTickets = resolvedTickets.filter(t => t.type === "applicatif");
+        
+        const calculateAvgTime = (tickets: Ticket[]) => {
+          let total = 0;
+          let count = 0;
+          tickets.forEach(ticket => {
+            // Ne compter que les tickets avec une date de création ET une date de résolution/clôture réelle
+            if (ticket.created_at && (ticket.resolved_at || ticket.closed_at)) {
+              const created = new Date(ticket.created_at);
+              const resolved = ticket.resolved_at ? new Date(ticket.resolved_at) : new Date(ticket.closed_at!);
+              const diffDays = (resolved.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+              // Ne compter que si le résultat est valide (différence positive)
+              if (diffDays >= 0) {
+                total += diffDays;
+                count++;
+              }
+            }
+          });
+          return count > 0 ? (total / count).toFixed(1) : "0.0";
+        };
+        
+        const materielAvgDays = calculateAvgTime(materielTickets);
+        const applicatifAvgDays = calculateAvgTime(applicatifTickets);
+        
+        // Indicateurs clés de performance
+        doc.setFontSize(14);
+        doc.text("Indicateurs clés de performance", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const kpiData = [
+          ["Indicateur", "Valeur", "Détails"],
+          ["Temps moyen de résolution", avgResolutionTimeDisplay, "Objectif: 3 jours"],
+          ["Taux de satisfaction utilisateur", `${satisfactionRate.toFixed(1)}%`, avgFeedback !== null ? `Note moyenne: ${avgFeedback.toFixed(1)}/5` : "Basé sur résolu/rejeté"],
+          ["Tickets escaladés", escalatedTickets.toString(), "Critiques en cours"],
+          ["Taux de réouverture", `${reopeningRate}%`, "Tickets rouverts après résolution"]
+        ];
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [kpiData[0]],
+          body: kpiData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [0, 123, 255] },
+          styles: { fontSize: 10 }
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Volume de tickets - Ce mois
+        doc.setFontSize(14);
+        doc.text("Volume de tickets - Ce mois", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const volumeData = [
+          ["Métrique", "Valeur", "Détails"],
+          ["Total créés", thisMonthCreated.toString(), `vs mois dernier: ${createdChange}%`],
+          ["Total résolus", thisMonthResolved.toString(), `Taux de résolution: ${resolutionRate}%`],
+          ["En attente", thisMonthPending.toString(), `Nécessitent action: ${pendingRate}%`]
+        ];
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [volumeData[0]],
+          body: volumeData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [40, 167, 69] },
+          styles: { fontSize: 10 }
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Performance par catégorie
+        doc.setFontSize(14);
+        doc.text("Performance par catégorie - Temps moyen", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const categoryData = [
+          ["Catégorie", "Temps moyen (jours)", "Tickets traités"],
+          ["Matériel", materielAvgDays + " jours", materielTickets.length.toString()],
+          ["Applicatif", applicatifAvgDays + " jours", applicatifTickets.length.toString()]
+        ];
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [categoryData[0]],
+          body: categoryData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [124, 58, 237] },
+          styles: { fontSize: 10 }
+        });
+        
+        doc.save(`Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+      } else if (selectedReport === "agence") {
+        // Export spécifique pour Analyses par agence
+        const doc = new jsPDF();
+        let yPos = 20;
+        
+        // En-tête
+        doc.setFontSize(16);
+        doc.text(`Rapport: ${reportName}`, 14, yPos);
+        yPos += 10;
+        doc.setFontSize(12);
+        doc.text(`Date de génération: ${new Date().toLocaleDateString('fr-FR')}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Généré par: ${userInfo?.full_name || 'Utilisateur'}`, 14, yPos);
+        yPos += 15;
+        
+        // Préparer les données des agences
+        const agencies = Array.from(new Set(allTickets.map((t) => t.creator?.agency || t.user_agency).filter(Boolean)));
+        const agencyData = agencies.map((agency) => {
+          const agencyTickets = allTickets.filter((t) => (t.creator?.agency || t.user_agency) === agency);
+          const resolvedAgencyTickets = agencyTickets.filter(t => t.status === "resolu" || t.status === "cloture");
+          
+          // Calculer le temps moyen de résolution (uniquement avec dates réelles)
+          let totalResolutionTime = 0;
+          let countWithDates = 0;
+          
+          resolvedAgencyTickets.forEach(ticket => {
+            if (ticket.created_at && (ticket.resolved_at || ticket.closed_at)) {
+              const created = new Date(ticket.created_at);
+              const resolved = ticket.resolved_at ? new Date(ticket.resolved_at) : new Date(ticket.closed_at!);
+              const diffTime = resolved.getTime() - created.getTime();
+              const diffDays = diffTime / (1000 * 60 * 60 * 24);
+              if (diffDays >= 0) {
+                totalResolutionTime += diffDays;
+                countWithDates++;
+              }
+            }
+          });
+          
+          const avgResolutionDays = countWithDates > 0 ? totalResolutionTime / countWithDates : 0;
+          const avgResolutionDisplay = countWithDates > 0 
+            ? avgResolutionDays % 1 === 0 
+              ? `${Math.round(avgResolutionDays)} jour${Math.round(avgResolutionDays) > 1 ? 's' : ''}`
+              : `${avgResolutionDays.toFixed(1)} jours`
+            : "N/A";
+          
+          // Calculer la satisfaction
+          const ticketsWithFeedback = resolvedAgencyTickets.filter(t => t.feedback_score !== null && t.feedback_score !== undefined);
+          let satisfactionDisplay = "N/A";
+          
+          if (ticketsWithFeedback.length > 0) {
+            const avgFeedback = ticketsWithFeedback.reduce((sum, t) => sum + (t.feedback_score || 0), 0) / ticketsWithFeedback.length;
+            satisfactionDisplay = `${((avgFeedback / 5) * 100).toFixed(1)}%`;
+          } else if (resolvedAgencyTickets.length > 0) {
+            const rejectedAgencyTickets = agencyTickets.filter(t => t.status === "rejete");
+            const resolvedCount = resolvedAgencyTickets.length;
+            const rejectedCount = rejectedAgencyTickets.length;
+            const totalProcessed = resolvedCount + rejectedCount;
+            if (totalProcessed > 0) {
+              const satisfactionRate = (resolvedCount / totalProcessed) * 100;
+              satisfactionDisplay = `${satisfactionRate.toFixed(1)}%`;
+            }
+          }
+          
+          return {
+            agence: agency,
+            nombreTickets: agencyTickets.length,
+            tempsMoyen: avgResolutionDisplay,
+            satisfaction: satisfactionDisplay
+          };
+        }).sort((a, b) => b.nombreTickets - a.nombreTickets);
+        
+        // Tableau Volume de tickets par agence
+        doc.setFontSize(14);
+        doc.text("Volume de tickets par agence", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const agencyTableData = [
+          ["Agence", "Nombre de tickets", "Temps moyen", "Satisfaction"]
+        ];
+        
+        agencyData.forEach(agency => {
+          agencyTableData.push([
+            agency.agence,
+            agency.nombreTickets.toString(),
+            agency.tempsMoyen,
+            agency.satisfaction
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [agencyTableData[0]],
+          body: agencyTableData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [0, 123, 255] },
+          styles: { fontSize: 10 }
+        });
+        
+        doc.save(`Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+      } else if (selectedReport === "technicien") {
+        // Export spécifique pour Analyses par technicien
+        const doc = new jsPDF();
+        let yPos = 20;
+        
+        // En-tête
+        doc.setFontSize(16);
+        doc.text(`Rapport: ${reportName}`, 14, yPos);
+        yPos += 10;
+        doc.setFontSize(12);
+        doc.text(`Date de génération: ${new Date().toLocaleDateString('fr-FR')}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Généré par: ${userInfo?.full_name || 'Utilisateur'}`, 14, yPos);
+        yPos += 15;
+        
+        // Préparer les données des techniciens (identique au calcul dans l'interface)
+        const technicianData = technicians.map((tech) => {
+          const techTickets = allTickets.filter((t) => t.technician_id === tech.id);
+          const inProgress = techTickets.filter((t) => t.status === "assigne_technicien" || t.status === "en_cours").length;
+          const resolvedTickets = techTickets.filter((t) => t.status === "resolu" || t.status === "cloture");
+          
+          // Calculer le temps moyen de résolution (uniquement avec dates réelles)
+          let avgTimeDisplay = "N/A";
+          if (resolvedTickets.length > 0) {
+            let totalHours = 0;
+            let countWithDates = 0;
+            
+            resolvedTickets.forEach((ticket) => {
+              if (ticket.created_at) {
+                const created = new Date(ticket.created_at);
+                let resolvedDate: Date | null = null;
+                
+                if (ticket.status === "cloture" && ticket.closed_at) {
+                  resolvedDate = new Date(ticket.closed_at);
+                } else if (ticket.status === "resolu" && ticket.resolved_at) {
+                  resolvedDate = new Date(ticket.resolved_at);
+                }
+                
+                if (resolvedDate) {
+                  const diffHours = (resolvedDate.getTime() - created.getTime()) / (1000 * 60 * 60);
+                  if (diffHours >= 0) {
+                    totalHours += diffHours;
+                    countWithDates++;
+                  }
+                }
+              }
+            });
+            
+            if (countWithDates > 0) {
+              const avgHours = totalHours / countWithDates;
+              if (avgHours < 24) {
+                avgTimeDisplay = `${avgHours.toFixed(1)}h`;
+              } else {
+                const avgDays = avgHours / 24;
+                avgTimeDisplay = `${avgDays.toFixed(1)}j`;
+              }
+            }
+          }
+          
+          // Calculer la satisfaction
+          let satisfactionDisplay = "N/A";
+          if (resolvedTickets.length > 0) {
+            const ticketsWithFeedback = resolvedTickets.filter((t) => t.feedback_score !== null && t.feedback_score !== undefined);
+            
+            if (ticketsWithFeedback.length > 0) {
+              const avgFeedback = ticketsWithFeedback.reduce((sum, t) => sum + (t.feedback_score || 0), 0) / ticketsWithFeedback.length;
+              const satisfactionRate = (avgFeedback / 5) * 100;
+              satisfactionDisplay = `${satisfactionRate.toFixed(1)}%`;
+            } else {
+              // Calculer satisfaction implicite basée sur le temps de résolution
+              let totalSatisfaction = 0;
+              let countSatisfaction = 0;
+              
+              resolvedTickets.forEach((ticket) => {
+                if (ticket.created_at) {
+                  const created = new Date(ticket.created_at);
+                  let resolvedDate: Date | null = null;
+                  
+                  if (ticket.status === "cloture" && ticket.closed_at) {
+                    resolvedDate = new Date(ticket.closed_at);
+                  } else if (ticket.status === "resolu" && ticket.resolved_at) {
+                    resolvedDate = new Date(ticket.resolved_at);
+                  }
+                  
+                  if (resolvedDate) {
+                    const diffHours = (resolvedDate.getTime() - created.getTime()) / (1000 * 60 * 60);
+                    const diffDays = diffHours / 24;
+                    
+                    let satisfactionScore = 0;
+                    if (ticket.priority === "haute" || ticket.priority === "critique") {
+                      if (diffHours < 24) satisfactionScore = 100;
+                      else if (diffHours < 48) satisfactionScore = 80;
+                      else if (diffHours < 72) satisfactionScore = 60;
+                      else satisfactionScore = 40;
+                    } else if (ticket.priority === "moyenne") {
+                      if (diffDays < 3) satisfactionScore = 100;
+                      else if (diffDays < 5) satisfactionScore = 80;
+                      else if (diffDays < 7) satisfactionScore = 60;
+                      else satisfactionScore = 40;
+                    } else {
+                      if (diffDays < 7) satisfactionScore = 100;
+                      else if (diffDays < 14) satisfactionScore = 80;
+                      else if (diffDays < 21) satisfactionScore = 60;
+                      else satisfactionScore = 40;
+                    }
+                    
+                    totalSatisfaction += satisfactionScore;
+                    countSatisfaction++;
+                  }
+                }
+              });
+              
+              if (countSatisfaction > 0) {
+                const avgSatisfaction = totalSatisfaction / countSatisfaction;
+                satisfactionDisplay = `${avgSatisfaction.toFixed(1)}%`;
+              }
+            }
+          }
+          
+          return {
+            technicien: tech.full_name,
+            ticketsTraites: resolvedTickets.length,
+            tempsMoyen: avgTimeDisplay,
+            chargeActuelle: inProgress,
+            satisfaction: satisfactionDisplay
+          };
+        });
+        
+        // Tableau Performance des techniciens
+        doc.setFontSize(14);
+        doc.text("Performance des techniciens", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const techTableData = [
+          ["Technicien", "Tickets traités", "Temps moyen", "Charge actuelle", "Satisfaction"]
+        ];
+        
+        technicianData.forEach(tech => {
+          techTableData.push([
+            tech.technicien,
+            tech.ticketsTraites.toString(),
+            tech.tempsMoyen,
+            tech.chargeActuelle.toString(),
+            tech.satisfaction
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [techTableData[0]],
+          body: techTableData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [0, 123, 255] },
+          styles: { fontSize: 10 }
+        });
+        
+        doc.save(`Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+      } else if (selectedReport === "evolutions") {
+        // Export spécifique pour Évolutions dans le temps
+        const doc = new jsPDF();
+        let yPos = 20;
+        
+        // En-tête
+        doc.setFontSize(16);
+        doc.text(`Rapport: ${reportName}`, 14, yPos);
+        yPos += 10;
+        doc.setFontSize(12);
+        doc.text(`Date de génération: ${new Date().toLocaleDateString('fr-FR')}`, 14, yPos);
+        yPos += 7;
+        doc.text(`Généré par: ${userInfo?.full_name || 'Utilisateur'}`, 14, yPos);
+        yPos += 15;
+        
+        // Volume de tickets (30 derniers jours)
+        doc.setFontSize(14);
+        doc.text("Volume de tickets (30 derniers jours)", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const timeSeriesData = prepareTimeSeriesData();
+        const timeSeriesTableData = [
+          ["Date", "Créés", "Résolus"]
+        ];
+        timeSeriesData.forEach(item => {
+          timeSeriesTableData.push([
+            item.date,
+            item.créés.toString(),
+            item.résolus.toString()
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [timeSeriesTableData[0]],
+          body: timeSeriesTableData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [0, 123, 255] },
+          styles: { fontSize: 9 },
+          pageBreak: 'auto'
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Évolution par statut (7 derniers jours)
+        doc.setFontSize(14);
+        doc.text("Évolution par statut (7 derniers jours)", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const statusEvolutionData = prepareStatusEvolutionData();
+        const statusEvolutionTableData = [
+          ["Date", "En attente", "En cours", "Résolus", "Clôturés"]
+        ];
+        statusEvolutionData.forEach(item => {
+          statusEvolutionTableData.push([
+            item.date,
+            item['En attente'].toString(),
+            item['En cours'].toString(),
+            item['Résolus'].toString(),
+            item['Clôturés'].toString()
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [statusEvolutionTableData[0]],
+          body: statusEvolutionTableData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [40, 167, 69] },
+          styles: { fontSize: 9 },
+          pageBreak: 'auto'
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Répartition par priorité
+        doc.setFontSize(14);
+        doc.text("Répartition par priorité", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const priorityEvolutionData = preparePriorityEvolutionData();
+        const priorityTableData = [
+          ["Priorité", "Nombre"]
+        ];
+        priorityEvolutionData.forEach(item => {
+          priorityTableData.push([
+            item.priorité,
+            item.nombre.toString()
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [priorityTableData[0]],
+          body: priorityTableData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [124, 58, 237] },
+          styles: { fontSize: 10 },
+          pageBreak: 'auto'
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Pics d'activité (jours de la semaine)
+        doc.setFontSize(14);
+        doc.text("Pics d'activité (jours de la semaine)", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const dayOfWeekData = prepareDayOfWeekData();
+        const dayTableData = [
+          ["Jour", "Nombre de tickets"]
+        ];
+        dayOfWeekData.forEach(item => {
+          dayTableData.push([
+            item.jour,
+            item.tickets.toString()
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [dayTableData[0]],
+          body: dayTableData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [255, 193, 7] },
+          styles: { fontSize: 10 },
+          pageBreak: 'auto'
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Répartition par heure
+        doc.setFontSize(14);
+        doc.text("Répartition des tickets par heure de la journée", 14, yPos);
+        yPos += 10;
+        doc.setFontSize(11);
+        
+        const hourlyData = prepareHourlyData();
+        const hourlyTableData = [
+          ["Heure", "Nombre de tickets"]
+        ];
+        hourlyData.forEach(item => {
+          hourlyTableData.push([
+            item.heure,
+            item.tickets.toString()
+          ]);
+        });
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [hourlyTableData[0]],
+          body: hourlyTableData.slice(1),
+          theme: 'striped',
+          headStyles: { fillColor: [23, 162, 184] },
+          styles: { fontSize: 9 },
+          pageBreak: 'auto'
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+        
+        // Évolution de la satisfaction (si disponible)
+        const satisfactionData = prepareSatisfactionData();
+        if (satisfactionData.length > 0) {
+          doc.setFontSize(14);
+          doc.text("Évolution de la satisfaction utilisateur (7 derniers jours)", 14, yPos);
+          yPos += 10;
+          doc.setFontSize(11);
+          
+          const satisfactionTableData = [
+            ["Date", "Satisfaction (sur 5)"]
+          ];
+          satisfactionData.forEach(item => {
+            satisfactionTableData.push([
+              item.date,
+              item.satisfaction.toString()
+            ]);
+          });
+          
+          autoTable(doc, {
+            startY: yPos,
+            head: [satisfactionTableData[0]],
+            body: satisfactionTableData.slice(1),
+            theme: 'striped',
+            headStyles: { fillColor: [220, 53, 69] },
+            styles: { fontSize: 10 }
+          });
+        }
+        
+        doc.save(`Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
       } else {
         // Export générique pour les autres rapports
         const doc = new jsPDF();
@@ -2623,6 +3554,517 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     try {
       if (selectedReport === "recurrents") {
         exportProblemsHistoryToExcel(reportName);
+      } else if (selectedReport === "statistiques") {
+        // Export spécifique pour Statistiques générales
+        const wb = XLSX.utils.book_new();
+        
+        // Feuille 1: Métriques principales
+        const metricsData = [
+          ['Rapport', reportName],
+          ['Date de génération', new Date().toLocaleDateString('fr-FR')],
+          ['Généré par', userInfo?.full_name || 'Utilisateur'],
+          [''],
+          ['Métriques principales'],
+          ['Nombre total de tickets', allTickets.length],
+          ['Tickets résolus/clôturés', resolvedCount + closedCount],
+          ['']
+        ];
+        const metricsWs = XLSX.utils.aoa_to_sheet(metricsData);
+        XLSX.utils.book_append_sheet(wb, metricsWs, sanitizeSheetName("Métriques"));
+        
+        // Feuille 2: Répartition par statut
+        const statusData = [
+          ['Statut', 'Nombre', 'Pourcentage'],
+          ['En attente', pendingCount, allTickets.length > 0 ? ((pendingCount / allTickets.length) * 100).toFixed(1) + '%' : '0%'],
+          ['Assignés/En cours', assignedCount, allTickets.length > 0 ? ((assignedCount / allTickets.length) * 100).toFixed(1) + '%' : '0%'],
+          ['Résolus', resolvedCount, allTickets.length > 0 ? ((resolvedCount / allTickets.length) * 100).toFixed(1) + '%' : '0%'],
+          ['Clôturés', closedCount, allTickets.length > 0 ? ((closedCount / allTickets.length) * 100).toFixed(1) + '%' : '0%'],
+          ['Rejetés', rejectedTickets.length, allTickets.length > 0 ? ((rejectedTickets.length / allTickets.length) * 100).toFixed(1) + '%' : '0%']
+        ];
+        const statusWs = XLSX.utils.aoa_to_sheet(statusData);
+        XLSX.utils.book_append_sheet(wb, statusWs, sanitizeSheetName("Par statut"));
+        
+        // Feuille 3: Répartition par priorité
+        const priorityData = [
+          ['Priorité', 'Nombre', 'Pourcentage']
+        ];
+        ["critique", "haute", "moyenne", "faible"].forEach((priority) => {
+          const count = allTickets.filter((t) => t.priority === priority).length;
+          priorityData.push([
+            priority.charAt(0).toUpperCase() + priority.slice(1),
+            count,
+            allTickets.length > 0 ? ((count / allTickets.length) * 100).toFixed(1) + '%' : '0%'
+          ]);
+        });
+        const priorityWs = XLSX.utils.aoa_to_sheet(priorityData);
+        XLSX.utils.book_append_sheet(wb, priorityWs, sanitizeSheetName("Par priorité"));
+        
+        XLSX.writeFile(wb, `Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      } else if (selectedReport === "metriques") {
+        // Export spécifique pour Métriques de performance
+        const wb = XLSX.utils.book_new();
+        
+        // Calculer les métriques principales (identique au calcul dans l'interface)
+        const avgResolutionTimeDisplay = metrics.avgResolutionTime ?? "N/A";
+        const resolvedTickets = allTickets.filter(t => t.status === "resolu" || t.status === "cloture");
+        
+        // Taux de satisfaction
+        const ticketsWithFeedback = resolvedTickets.filter(t => t.feedback_score !== null && t.feedback_score !== undefined);
+        const avgFeedback = ticketsWithFeedback.length > 0 
+          ? ticketsWithFeedback.reduce((sum, t) => sum + (t.feedback_score || 0), 0) / ticketsWithFeedback.length
+          : null;
+        const rejectedTicketsRpt = allTickets.filter(t => t.status === "rejete");
+        const resolvedCountRpt = resolvedTickets.length;
+        const rejectedCountRpt = rejectedTicketsRpt.length;
+        const denomRpt = resolvedCountRpt + rejectedCountRpt;
+        let satisfactionRate = 0;
+        if (avgFeedback !== null) {
+          satisfactionRate = (avgFeedback / 5) * 100;
+        } else if (denomRpt > 0) {
+          satisfactionRate = (resolvedCountRpt / denomRpt) * 100;
+        }
+        
+        // Tickets escaladés
+        const escalatedTickets = allTickets.filter((t) => 
+          t.priority === "critique" && 
+          (t.status === "en_attente_analyse" || t.status === "assigne_technicien" || t.status === "en_cours")
+        ).length;
+        
+        // Taux de réouverture
+        const totalResolvedOrClosed = resolvedTickets.length;
+        const reopeningRate = totalResolvedOrClosed > 0 
+          ? ((reopenedTicketsCount / totalResolvedOrClosed) * 100).toFixed(1) 
+          : "0.0";
+        
+        // Volume de tickets - Ce mois
+        const now = new Date();
+        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        
+        const thisMonthTickets = allTickets.filter(t => {
+          if (!t.created_at) return false;
+          const created = new Date(t.created_at);
+          return created >= currentMonthStart;
+        });
+        
+        const lastMonthTickets = allTickets.filter(t => {
+          if (!t.created_at) return false;
+          const created = new Date(t.created_at);
+          return created >= lastMonthStart && created <= lastMonthEnd;
+        });
+        
+        const thisMonthResolved = thisMonthTickets.filter(t => t.status === "resolu" || t.status === "cloture").length;
+        const thisMonthCreated = thisMonthTickets.length;
+        const thisMonthPending = thisMonthTickets.filter(t => 
+          t.status !== "resolu" && t.status !== "cloture" && t.status !== "rejete"
+        ).length;
+        
+        const lastMonthCreated = lastMonthTickets.length;
+        const createdChange = lastMonthCreated > 0 
+          ? ((thisMonthCreated - lastMonthCreated) / lastMonthCreated * 100).toFixed(0)
+          : "0";
+        const resolutionRate = thisMonthCreated > 0 
+          ? ((thisMonthResolved / thisMonthCreated) * 100).toFixed(0)
+          : "0";
+        const pendingRate = thisMonthCreated > 0 
+          ? ((thisMonthPending / thisMonthCreated) * 100).toFixed(0)
+          : "0";
+        
+        // Performance par catégorie
+        const materielTickets = resolvedTickets.filter(t => t.type === "materiel");
+        const applicatifTickets = resolvedTickets.filter(t => t.type === "applicatif");
+        
+        const calculateAvgTime = (tickets: Ticket[]) => {
+          let total = 0;
+          let count = 0;
+          tickets.forEach(ticket => {
+            // Ne compter que les tickets avec une date de création ET une date de résolution/clôture réelle
+            if (ticket.created_at && (ticket.resolved_at || ticket.closed_at)) {
+              const created = new Date(ticket.created_at);
+              const resolved = ticket.resolved_at ? new Date(ticket.resolved_at) : new Date(ticket.closed_at!);
+              const diffDays = (resolved.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+              // Ne compter que si le résultat est valide (différence positive)
+              if (diffDays >= 0) {
+                total += diffDays;
+                count++;
+              }
+            }
+          });
+          return count > 0 ? (total / count).toFixed(1) : "0.0";
+        };
+        
+        const materielAvgDays = calculateAvgTime(materielTickets);
+        const applicatifAvgDays = calculateAvgTime(applicatifTickets);
+        
+        // Feuille 1: Indicateurs clés de performance
+        const kpiData = [
+          ['Rapport', reportName],
+          ['Date de génération', new Date().toLocaleDateString('fr-FR')],
+          ['Généré par', userInfo?.full_name || 'Utilisateur'],
+          [''],
+          ['Indicateurs clés de performance'],
+          ['Indicateur', 'Valeur', 'Détails'],
+          ['Temps moyen de résolution', avgResolutionTimeDisplay, 'Objectif: 3 jours'],
+          ['Taux de satisfaction utilisateur', `${satisfactionRate.toFixed(1)}%`, avgFeedback !== null ? `Note moyenne: ${avgFeedback.toFixed(1)}/5` : 'Basé sur résolu/rejeté'],
+          ['Tickets escaladés', escalatedTickets, 'Critiques en cours'],
+          ['Taux de réouverture', `${reopeningRate}%`, 'Tickets rouverts après résolution']
+        ];
+        const kpiWs = XLSX.utils.aoa_to_sheet(kpiData);
+        XLSX.utils.book_append_sheet(wb, kpiWs, sanitizeSheetName("KPIs"));
+        
+        // Feuille 2: Volume de tickets - Ce mois
+        const volumeData = [
+          ['Volume de tickets - Ce mois'],
+          ['Métrique', 'Valeur', 'Détails'],
+          ['Total créés', thisMonthCreated, `vs mois dernier: ${createdChange}%`],
+          ['Total résolus', thisMonthResolved, `Taux de résolution: ${resolutionRate}%`],
+          ['En attente', thisMonthPending, `Nécessitent action: ${pendingRate}%`]
+        ];
+        const volumeWs = XLSX.utils.aoa_to_sheet(volumeData);
+        XLSX.utils.book_append_sheet(wb, volumeWs, sanitizeSheetName("Volume"));
+        
+        // Feuille 3: Performance par catégorie
+        const categoryData = [
+          ['Performance par catégorie - Temps moyen'],
+          ['Catégorie', 'Temps moyen (jours)', 'Tickets traités'],
+          ['Matériel', parseFloat(materielAvgDays), materielTickets.length],
+          ['Applicatif', parseFloat(applicatifAvgDays), applicatifTickets.length]
+        ];
+        const categoryWs = XLSX.utils.aoa_to_sheet(categoryData);
+        XLSX.utils.book_append_sheet(wb, categoryWs, sanitizeSheetName("Catégories"));
+        
+        XLSX.writeFile(wb, `Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      } else if (selectedReport === "agence") {
+        // Export spécifique pour Analyses par agence
+        const wb = XLSX.utils.book_new();
+        
+        // Préparer les données des agences
+        const agencies = Array.from(new Set(allTickets.map((t) => t.creator?.agency || t.user_agency).filter(Boolean)));
+        const agencyData = agencies.map((agency) => {
+          const agencyTickets = allTickets.filter((t) => (t.creator?.agency || t.user_agency) === agency);
+          const resolvedAgencyTickets = agencyTickets.filter(t => t.status === "resolu" || t.status === "cloture");
+          
+          // Calculer le temps moyen de résolution (uniquement avec dates réelles)
+          let totalResolutionTime = 0;
+          let countWithDates = 0;
+          
+          resolvedAgencyTickets.forEach(ticket => {
+            if (ticket.created_at && (ticket.resolved_at || ticket.closed_at)) {
+              const created = new Date(ticket.created_at);
+              const resolved = ticket.resolved_at ? new Date(ticket.resolved_at) : new Date(ticket.closed_at!);
+              const diffTime = resolved.getTime() - created.getTime();
+              const diffDays = diffTime / (1000 * 60 * 60 * 24);
+              if (diffDays >= 0) {
+                totalResolutionTime += diffDays;
+                countWithDates++;
+              }
+            }
+          });
+          
+          const avgResolutionDays = countWithDates > 0 ? totalResolutionTime / countWithDates : 0;
+          const avgResolutionDisplay = countWithDates > 0 
+            ? avgResolutionDays % 1 === 0 
+              ? `${Math.round(avgResolutionDays)} jour${Math.round(avgResolutionDays) > 1 ? 's' : ''}`
+              : `${avgResolutionDays.toFixed(1)} jours`
+            : "N/A";
+          
+          // Calculer la satisfaction
+          const ticketsWithFeedback = resolvedAgencyTickets.filter(t => t.feedback_score !== null && t.feedback_score !== undefined);
+          let satisfactionDisplay = "N/A";
+          
+          if (ticketsWithFeedback.length > 0) {
+            const avgFeedback = ticketsWithFeedback.reduce((sum, t) => sum + (t.feedback_score || 0), 0) / ticketsWithFeedback.length;
+            satisfactionDisplay = `${((avgFeedback / 5) * 100).toFixed(1)}%`;
+          } else if (resolvedAgencyTickets.length > 0) {
+            const rejectedAgencyTickets = agencyTickets.filter(t => t.status === "rejete");
+            const resolvedCount = resolvedAgencyTickets.length;
+            const rejectedCount = rejectedAgencyTickets.length;
+            const totalProcessed = resolvedCount + rejectedCount;
+            if (totalProcessed > 0) {
+              const satisfactionRate = (resolvedCount / totalProcessed) * 100;
+              satisfactionDisplay = `${satisfactionRate.toFixed(1)}%`;
+            }
+          }
+          
+          return {
+            agence: agency,
+            nombreTickets: agencyTickets.length,
+            tempsMoyen: avgResolutionDisplay,
+            tempsMoyenJours: countWithDates > 0 ? avgResolutionDays : null,
+            satisfaction: satisfactionDisplay
+          };
+        }).sort((a, b) => b.nombreTickets - a.nombreTickets);
+        
+        // Feuille: Volume de tickets par agence
+        const agencyTableData = [
+          ['Rapport', reportName],
+          ['Date de génération', new Date().toLocaleDateString('fr-FR')],
+          ['Généré par', userInfo?.full_name || 'Utilisateur'],
+          [''],
+          ['Volume de tickets par agence'],
+          ['Agence', 'Nombre de tickets', 'Temps moyen', 'Satisfaction']
+        ];
+        
+        agencyData.forEach(agency => {
+          agencyTableData.push([
+            agency.agence,
+            agency.nombreTickets,
+            agency.tempsMoyen,
+            agency.satisfaction
+          ]);
+        });
+        
+        const agencyWs = XLSX.utils.aoa_to_sheet(agencyTableData);
+        XLSX.utils.book_append_sheet(wb, agencyWs, sanitizeSheetName("Par agence"));
+        
+        XLSX.writeFile(wb, `Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      } else if (selectedReport === "technicien") {
+        // Export spécifique pour Analyses par technicien
+        const wb = XLSX.utils.book_new();
+        
+        // Préparer les données des techniciens (identique au calcul dans l'interface)
+        const technicianData = technicians.map((tech) => {
+          const techTickets = allTickets.filter((t) => t.technician_id === tech.id);
+          const inProgress = techTickets.filter((t) => t.status === "assigne_technicien" || t.status === "en_cours").length;
+          const resolvedTickets = techTickets.filter((t) => t.status === "resolu" || t.status === "cloture");
+          
+          // Calculer le temps moyen de résolution (uniquement avec dates réelles)
+          let avgTimeDisplay = "N/A";
+          if (resolvedTickets.length > 0) {
+            let totalHours = 0;
+            let countWithDates = 0;
+            
+            resolvedTickets.forEach((ticket) => {
+              if (ticket.created_at) {
+                const created = new Date(ticket.created_at);
+                let resolvedDate: Date | null = null;
+                
+                if (ticket.status === "cloture" && ticket.closed_at) {
+                  resolvedDate = new Date(ticket.closed_at);
+                } else if (ticket.status === "resolu" && ticket.resolved_at) {
+                  resolvedDate = new Date(ticket.resolved_at);
+                }
+                
+                if (resolvedDate) {
+                  const diffHours = (resolvedDate.getTime() - created.getTime()) / (1000 * 60 * 60);
+                  if (diffHours >= 0) {
+                    totalHours += diffHours;
+                    countWithDates++;
+                  }
+                }
+              }
+            });
+            
+            if (countWithDates > 0) {
+              const avgHours = totalHours / countWithDates;
+              if (avgHours < 24) {
+                avgTimeDisplay = `${avgHours.toFixed(1)}h`;
+              } else {
+                const avgDays = avgHours / 24;
+                avgTimeDisplay = `${avgDays.toFixed(1)}j`;
+              }
+            }
+          }
+          
+          // Calculer la satisfaction
+          let satisfactionDisplay = "N/A";
+          if (resolvedTickets.length > 0) {
+            const ticketsWithFeedback = resolvedTickets.filter((t) => t.feedback_score !== null && t.feedback_score !== undefined);
+            
+            if (ticketsWithFeedback.length > 0) {
+              const avgFeedback = ticketsWithFeedback.reduce((sum, t) => sum + (t.feedback_score || 0), 0) / ticketsWithFeedback.length;
+              const satisfactionRate = (avgFeedback / 5) * 100;
+              satisfactionDisplay = `${satisfactionRate.toFixed(1)}%`;
+            } else {
+              // Calculer satisfaction implicite basée sur le temps de résolution
+              let totalSatisfaction = 0;
+              let countSatisfaction = 0;
+              
+              resolvedTickets.forEach((ticket) => {
+                if (ticket.created_at) {
+                  const created = new Date(ticket.created_at);
+                  let resolvedDate: Date | null = null;
+                  
+                  if (ticket.status === "cloture" && ticket.closed_at) {
+                    resolvedDate = new Date(ticket.closed_at);
+                  } else if (ticket.status === "resolu" && ticket.resolved_at) {
+                    resolvedDate = new Date(ticket.resolved_at);
+                  }
+                  
+                  if (resolvedDate) {
+                    const diffHours = (resolvedDate.getTime() - created.getTime()) / (1000 * 60 * 60);
+                    const diffDays = diffHours / 24;
+                    
+                    let satisfactionScore = 0;
+                    if (ticket.priority === "haute" || ticket.priority === "critique") {
+                      if (diffHours < 24) satisfactionScore = 100;
+                      else if (diffHours < 48) satisfactionScore = 80;
+                      else if (diffHours < 72) satisfactionScore = 60;
+                      else satisfactionScore = 40;
+                    } else if (ticket.priority === "moyenne") {
+                      if (diffDays < 3) satisfactionScore = 100;
+                      else if (diffDays < 5) satisfactionScore = 80;
+                      else if (diffDays < 7) satisfactionScore = 60;
+                      else satisfactionScore = 40;
+                    } else {
+                      if (diffDays < 7) satisfactionScore = 100;
+                      else if (diffDays < 14) satisfactionScore = 80;
+                      else if (diffDays < 21) satisfactionScore = 60;
+                      else satisfactionScore = 40;
+                    }
+                    
+                    totalSatisfaction += satisfactionScore;
+                    countSatisfaction++;
+                  }
+                }
+              });
+              
+              if (countSatisfaction > 0) {
+                const avgSatisfaction = totalSatisfaction / countSatisfaction;
+                satisfactionDisplay = `${avgSatisfaction.toFixed(1)}%`;
+              }
+            }
+          }
+          
+          return {
+            technicien: tech.full_name,
+            ticketsTraites: resolvedTickets.length,
+            tempsMoyen: avgTimeDisplay,
+            chargeActuelle: inProgress,
+            satisfaction: satisfactionDisplay
+          };
+        });
+        
+        // Feuille: Performance des techniciens
+        const techTableData = [
+          ['Rapport', reportName],
+          ['Date de génération', new Date().toLocaleDateString('fr-FR')],
+          ['Généré par', userInfo?.full_name || 'Utilisateur'],
+          [''],
+          ['Performance des techniciens'],
+          ['Technicien', 'Tickets traités', 'Temps moyen', 'Charge actuelle', 'Satisfaction']
+        ];
+        
+        technicianData.forEach(tech => {
+          techTableData.push([
+            tech.technicien,
+            tech.ticketsTraites,
+            tech.tempsMoyen,
+            tech.chargeActuelle,
+            tech.satisfaction
+          ]);
+        });
+        
+        const techWs = XLSX.utils.aoa_to_sheet(techTableData);
+        XLSX.utils.book_append_sheet(wb, techWs, sanitizeSheetName("Techniciens"));
+        
+        XLSX.writeFile(wb, `Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      } else if (selectedReport === "evolutions") {
+        // Export spécifique pour Évolutions dans le temps
+        const wb = XLSX.utils.book_new();
+        
+        // Feuille 1: Volume de tickets (30 derniers jours)
+        const timeSeriesData = prepareTimeSeriesData();
+        const timeSeriesTableData = [
+          ['Rapport', reportName],
+          ['Date de génération', new Date().toLocaleDateString('fr-FR')],
+          ['Généré par', userInfo?.full_name || 'Utilisateur'],
+          [''],
+          ['Volume de tickets (30 derniers jours)'],
+          ['Date', 'Créés', 'Résolus']
+        ];
+        timeSeriesData.forEach(item => {
+          timeSeriesTableData.push([
+            item.date,
+            item.créés,
+            item.résolus
+          ]);
+        });
+        const timeSeriesWs = XLSX.utils.aoa_to_sheet(timeSeriesTableData);
+        XLSX.utils.book_append_sheet(wb, timeSeriesWs, sanitizeSheetName("Volume 30j"));
+        
+        // Feuille 2: Évolution par statut (7 derniers jours)
+        const statusEvolutionData = prepareStatusEvolutionData();
+        const statusEvolutionTableData = [
+          ['Évolution par statut (7 derniers jours)'],
+          ['Date', 'En attente', 'En cours', 'Résolus', 'Clôturés']
+        ];
+        statusEvolutionData.forEach(item => {
+          statusEvolutionTableData.push([
+            item.date,
+            item['En attente'],
+            item['En cours'],
+            item['Résolus'],
+            item['Clôturés']
+          ]);
+        });
+        const statusEvolutionWs = XLSX.utils.aoa_to_sheet(statusEvolutionTableData);
+        XLSX.utils.book_append_sheet(wb, statusEvolutionWs, sanitizeSheetName("Par statut"));
+        
+        // Feuille 3: Répartition par priorité
+        const priorityEvolutionData = preparePriorityEvolutionData();
+        const priorityTableData = [
+          ['Répartition par priorité'],
+          ['Priorité', 'Nombre']
+        ];
+        priorityEvolutionData.forEach(item => {
+          priorityTableData.push([
+            item.priorité,
+            item.nombre
+          ]);
+        });
+        const priorityWs = XLSX.utils.aoa_to_sheet(priorityTableData);
+        XLSX.utils.book_append_sheet(wb, priorityWs, sanitizeSheetName("Par priorité"));
+        
+        // Feuille 4: Pics d'activité (jours de la semaine)
+        const dayOfWeekData = prepareDayOfWeekData();
+        const dayTableData = [
+          ["Pics d'activité (jours de la semaine)"],
+          ['Jour', 'Nombre de tickets']
+        ];
+        dayOfWeekData.forEach(item => {
+          dayTableData.push([
+            item.jour,
+            item.tickets
+          ]);
+        });
+        const dayWs = XLSX.utils.aoa_to_sheet(dayTableData);
+        XLSX.utils.book_append_sheet(wb, dayWs, sanitizeSheetName("Jours semaine"));
+        
+        // Feuille 5: Répartition par heure
+        const hourlyData = prepareHourlyData();
+        const hourlyTableData = [
+          ['Répartition des tickets par heure de la journée'],
+          ['Heure', 'Nombre de tickets']
+        ];
+        hourlyData.forEach(item => {
+          hourlyTableData.push([
+            item.heure,
+            item.tickets
+          ]);
+        });
+        const hourlyWs = XLSX.utils.aoa_to_sheet(hourlyTableData);
+        XLSX.utils.book_append_sheet(wb, hourlyWs, sanitizeSheetName("Par heure"));
+        
+        // Feuille 6: Évolution de la satisfaction (si disponible)
+        const satisfactionData = prepareSatisfactionData();
+        if (satisfactionData.length > 0) {
+          const satisfactionTableData = [
+            ['Évolution de la satisfaction utilisateur (7 derniers jours)'],
+            ['Date', 'Satisfaction (sur 5)']
+          ];
+          satisfactionData.forEach(item => {
+            satisfactionTableData.push([
+              item.date,
+              item.satisfaction
+            ]);
+          });
+          const satisfactionWs = XLSX.utils.aoa_to_sheet(satisfactionTableData);
+          XLSX.utils.book_append_sheet(wb, satisfactionWs, sanitizeSheetName("Satisfaction"));
+        }
+        
+        XLSX.writeFile(wb, `Rapport_${reportName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
       } else {
         // Export générique pour les autres rapports
         const wb = XLSX.utils.book_new();
@@ -2769,6 +4211,24 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
   
   if (priorityFilter !== "all") {
     filteredTickets = filteredTickets.filter((t) => t.priority === priorityFilter);
+  }
+  
+  // Filtre par délégation (UNIQUEMENT les tickets délégués par le DSI connecté)
+  if (delegationFilter !== "all" && userRole === "DSI") {
+    if (delegationFilter === "delegated") {
+      // Filtrer uniquement les tickets délégués par le DSI connecté
+      filteredTickets = filteredTickets.filter((t) => delegatedTicketsByMe.has(t.id));
+    } else if (delegationFilter === "not_delegated") {
+      // Filtrer les tickets non délégués OU délégués par quelqu'un d'autre
+      filteredTickets = filteredTickets.filter((t) => !delegatedTicketsByMe.has(t.id));
+    }
+  } else if (delegationFilter !== "all" && userRole !== "DSI") {
+    // Pour les autres rôles, utiliser l'ancienne logique
+    if (delegationFilter === "delegated") {
+      filteredTickets = filteredTickets.filter((t) => t.secretary_id !== null && t.secretary_id !== undefined);
+    } else if (delegationFilter === "not_delegated") {
+      filteredTickets = filteredTickets.filter((t) => t.secretary_id === null || t.secretary_id === undefined);
+    }
   }
 
   return (
@@ -3821,6 +5281,24 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
             <option value="faible">Faible</option>
           </select>
         </div>
+        <div style={{ flex: 1, minWidth: "200px" }}>
+          <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#666" }}>Filtrer par délégation</label>
+          <select
+            value={delegationFilter}
+            onChange={(e) => setDelegationFilter(e.target.value)}
+            style={{ 
+              width: "100%", 
+              padding: "8px 12px", 
+              border: "1px solid #ddd", 
+              borderRadius: "4px",
+              fontSize: "14px"
+            }}
+          >
+            <option value="all">Tous les tickets</option>
+            <option value="delegated">Tickets délégués</option>
+            <option value="not_delegated">Tickets non délégués</option>
+          </select>
+        </div>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", background: "white", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
         <thead>
@@ -4408,6 +5886,26 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                     <option value="faible">Faible</option>
                   </select>
                 </div>
+                {userRole === "DSI" && (
+                  <div style={{ flex: 1, minWidth: "200px" }}>
+                    <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#666" }}>Filtrer par délégation</label>
+                    <select
+                      value={delegationFilter}
+                      onChange={(e) => setDelegationFilter(e.target.value)}
+                      style={{ 
+                        width: "100%", 
+                        padding: "8px 12px", 
+                        border: "1px solid #ddd", 
+                        borderRadius: "4px",
+                        fontSize: "14px"
+                      }}
+                    >
+                      <option value="all">Tous les tickets</option>
+                      <option value="delegated">Tickets délégués</option>
+                      <option value="not_delegated">Tickets non délégués</option>
+                    </select>
+                  </div>
+                )}
               </div>
               
               <table style={{ width: "100%", borderCollapse: "collapse", background: "white", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -5086,36 +6584,29 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
               )}
 
               {selectedReport === "metriques" && (() => {
-                // Calculer le temps moyen de résolution réel (en utilisant resolved_at si disponible)
-                const resolvedTickets = allTickets.filter(t => t.status === "resolu" || t.status === "cloture");
-                let totalResolutionTime = 0;
-                let countWithDates = 0;
+                // Utiliser le temps moyen du tableau de bord (metrics.avgResolutionTime)
+                const avgResolutionTimeDisplay = metrics.avgResolutionTime ?? "Chargement...";
                 const targetResolutionDays = 3; // Objectif de 3 jours
                 
-                resolvedTickets.forEach(ticket => {
-                  if (ticket.created_at) {
-                    const created = new Date(ticket.created_at);
-                    let resolved = new Date();
-                    if (ticket.resolved_at) {
-                      resolved = new Date(ticket.resolved_at);
-                    } else if (ticket.closed_at) {
-                      resolved = new Date(ticket.closed_at);
+                // Extraire le nombre de jours depuis le format affiché (ex: "3.9 jours" ou "4 jours 2h")
+                let avgResolutionDaysRounded = 0;
+                if (avgResolutionTimeDisplay && avgResolutionTimeDisplay !== "Chargement..." && avgResolutionTimeDisplay !== null) {
+                  const match = avgResolutionTimeDisplay.match(/(\d+(?:\.\d+)?)\s*jour/);
+                  if (match) {
+                    avgResolutionDaysRounded = parseFloat(match[1]);
+                  } else {
+                    // Si format en heures, convertir
+                    const hoursMatch = avgResolutionTimeDisplay.match(/(\d+)\s*h/);
+                    if (hoursMatch) {
+                      avgResolutionDaysRounded = parseFloat(hoursMatch[1]) / 24;
                     }
-                    const diffTime = resolved.getTime() - created.getTime();
-                    const diffDays = diffTime / (1000 * 60 * 60 * 24);
-                    totalResolutionTime += diffDays;
-                    countWithDates++;
                   }
-                });
+                }
                 
-                const avgResolutionDays = countWithDates > 0 ? totalResolutionTime / countWithDates : 0;
-                const avgResolutionDaysRounded = Math.round(avgResolutionDays * 10) / 10;
-                const avgResolutionTimeDisplay = avgResolutionDaysRounded === 0 ? "0 jours" : 
-                  avgResolutionDaysRounded % 1 === 0 
-                    ? `${Math.round(avgResolutionDaysRounded)} jour${Math.round(avgResolutionDaysRounded) > 1 ? 's' : ''}`
-                    : `${avgResolutionDaysRounded.toFixed(1)} jours`;
                 const isAboveTarget = avgResolutionDaysRounded > targetResolutionDays;
                 const diffFromTarget = avgResolutionDaysRounded > targetResolutionDays ? Math.round(avgResolutionDaysRounded - targetResolutionDays) : 0;
+                
+                const resolvedTickets = allTickets.filter(t => t.status === "resolu" || t.status === "cloture");
                 
                 // Calculer la satisfaction en utilisant feedback_score si disponible
                 const ticketsWithFeedback = resolvedTickets.filter(t => t.feedback_score !== null && t.feedback_score !== undefined);
@@ -5147,13 +6638,10 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                 ).length;
                 const escalatedActive = escalatedTickets;
                 
-                // Calculer le taux de réouverture
-                const rejectedTickets = allTickets.filter(t => t.status === "rejete");
-                // Pour simplifier, considérons les tickets qui ont été rejetés puis ont changé de statut comme réouverts
-                // En réalité, il faudrait vérifier l'historique
-                const reopenedTickets = 0; // Simplifié pour l'instant
-                const reopeningRate = rejectedTickets.length > 0 
-                  ? ((reopenedTickets / rejectedTickets.length) * 100).toFixed(1) 
+                // Calculer le taux de réouverture réel
+                const totalResolvedOrClosed = resolvedTickets.length;
+                const reopeningRate = totalResolvedOrClosed > 0 
+                  ? ((reopenedTicketsCount / totalResolvedOrClosed) * 100).toFixed(1) 
                   : "0.0";
                 const reopeningRateDisplay = `${reopeningRate}%`;
                 const isReopeningExcellent = parseFloat(reopeningRate) <= 5;
@@ -5201,17 +6689,16 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                   let total = 0;
                   let count = 0;
                   tickets.forEach(ticket => {
-                    if (ticket.created_at) {
+                    // Ne compter que les tickets avec une date de création ET une date de résolution/clôture réelle
+                    if (ticket.created_at && (ticket.resolved_at || ticket.closed_at)) {
                       const created = new Date(ticket.created_at);
-                      let resolved = new Date();
-                      if (ticket.resolved_at) {
-                        resolved = new Date(ticket.resolved_at);
-                      } else if (ticket.closed_at) {
-                        resolved = new Date(ticket.closed_at);
-                      }
+                      const resolved = ticket.resolved_at ? new Date(ticket.resolved_at) : new Date(ticket.closed_at!);
                       const diffDays = (resolved.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
-                      total += diffDays;
-                      count++;
+                      // Ne compter que si le résultat est valide (différence positive)
+                      if (diffDays >= 0) {
+                        total += diffDays;
+                        count++;
+                      }
                     }
                   });
                   return count > 0 ? (total / count).toFixed(1) : "0.0";
@@ -5225,21 +6712,21 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                 return (
                   <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
                     {/* 4 KPIs principaux */}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "16px", marginBottom: "32px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "32px" }}>
                       {/* Temps moyen de résolution */}
-                      <div style={{ padding: "16px", background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", position: "relative" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
-                          <div style={{ width: "40px", height: "40px", background: "#fff3e0", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <span style={{ fontSize: "20px" }}>🕐</span>
+                      <div style={{ padding: "12px", background: "white", borderRadius: "8px", border: "1px solid #e5e7eb", position: "relative" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                          <div style={{ width: "32px", height: "32px", background: "#fff3e0", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <span style={{ fontSize: "16px" }}>🕐</span>
                           </div>
                           {diffFromTarget > 0 && (
-                            <div style={{ fontSize: "13px", color: "#dc2626", fontWeight: "500" }}>+{diffFromTarget}j</div>
+                            <div style={{ fontSize: "11px", color: "#dc2626", fontWeight: "500" }}>+{diffFromTarget}j</div>
                           )}
                         </div>
-                        <div style={{ fontSize: "28px", fontWeight: "bold", color: "#ea580c", marginBottom: "6px" }}>{avgResolutionTimeDisplay}</div>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>Temps moyen de résolution</div>
+                        <div style={{ fontSize: "22px", fontWeight: "bold", color: "#ea580c", marginBottom: "4px" }}>{avgResolutionTimeDisplay}</div>
+                        <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>Temps moyen de résolution</div>
                         {isAboveTarget && (
-                          <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#92400e" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", color: "#92400e" }}>
                             <span>⚠️</span>
                             <span>Au-dessus de l'objectif ({targetResolutionDays}j)</span>
                           </div>
@@ -5247,22 +6734,22 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                       </div>
                       
                       {/* Taux de satisfaction */}
-                      <div style={{ padding: "16px", background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", position: "relative" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
-                          <div style={{ width: "40px", height: "40px", background: "#f0fdf4", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <div style={{ width: "20px", height: "20px", borderRadius: "50%", background: "#16a34a", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <span style={{ color: "white", fontSize: "12px" }}>✓</span>
+                      <div style={{ padding: "12px", background: "white", borderRadius: "8px", border: "1px solid #e5e7eb", position: "relative" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                          <div style={{ width: "32px", height: "32px", background: "#f0fdf4", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <div style={{ width: "18px", height: "18px", borderRadius: "50%", background: "#16a34a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <span style={{ color: "white", fontSize: "10px" }}>✓</span>
                             </div>
                           </div>
-                          <div style={{ fontSize: "13px", color: "#16a34a", fontWeight: "500", display: "flex", alignItems: "center", gap: "4px" }}>
+                          <div style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500", display: "flex", alignItems: "center", gap: "3px" }}>
                             <span>📈</span>
                             <span>{satisfactionChange}</span>
                           </div>
                         </div>
-                        <div style={{ fontSize: "28px", fontWeight: "bold", color: "#15803d", marginBottom: "6px" }}>{satisfactionDisplay}</div>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "6px" }}>Taux de satisfaction utilisateur</div>
+                        <div style={{ fontSize: "22px", fontWeight: "bold", color: "#15803d", marginBottom: "4px" }}>{satisfactionDisplay}</div>
+                        <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "4px" }}>Taux de satisfaction utilisateur</div>
                         {isSatisfactionExcellent && (
-                          <div style={{ fontSize: "12px", color: "#16a34a", display: "flex", alignItems: "center", gap: "5px" }}>
+                          <div style={{ fontSize: "10px", color: "#16a34a", display: "flex", alignItems: "center", gap: "4px" }}>
                             <span>✓</span>
                             <span>Excellent résultat</span>
                           </div>
@@ -5270,34 +6757,34 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                       </div>
                       
                       {/* Tickets escaladés */}
-                      <div style={{ padding: "16px", background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", position: "relative" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
-                          <div style={{ width: "40px", height: "40px", background: "#fef2f2", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <span style={{ fontSize: "20px", color: "#dc2626" }}>⚠️</span>
+                      <div style={{ padding: "12px", background: "white", borderRadius: "8px", border: "1px solid #e5e7eb", position: "relative" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                          <div style={{ width: "32px", height: "32px", background: "#fef2f2", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <span style={{ fontSize: "16px", color: "#dc2626" }}>⚠️</span>
                           </div>
-                          <div style={{ fontSize: "13px", color: "#16a34a", fontWeight: "500" }}>{escalatedActive} actifs</div>
+                          <div style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>{escalatedActive} actifs</div>
                         </div>
-                        <div style={{ fontSize: "28px", fontWeight: "bold", color: "#dc2626", marginBottom: "6px" }}>{escalatedTickets}</div>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>Tickets escaladés</div>
-                        <div style={{ fontSize: "12px", color: "#9ca3af" }}>Critiques en cours</div>
+                        <div style={{ fontSize: "22px", fontWeight: "bold", color: "#dc2626", marginBottom: "4px" }}>{escalatedTickets}</div>
+                        <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "2px" }}>Tickets escaladés</div>
+                        <div style={{ fontSize: "10px", color: "#9ca3af" }}>Critiques en cours</div>
                       </div>
                       
                       {/* Taux de réouverture */}
-                      <div style={{ padding: "16px", background: "white", borderRadius: "12px", border: "1px solid #e5e7eb", position: "relative" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
-                          <div style={{ width: "40px", height: "40px", background: "#eff6ff", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <div style={{ padding: "12px", background: "white", borderRadius: "8px", border: "1px solid #e5e7eb", position: "relative" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                          <div style={{ width: "32px", height: "32px", background: "#eff6ff", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                               <path d="M3 18L9 12L13 16L21 8" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                               <path d="M21 8H15V14" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                             </svg>
                           </div>
                           {isReopeningExcellent && (
-                            <div style={{ fontSize: "13px", color: "#16a34a", fontWeight: "500" }}>Excellent</div>
+                            <div style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>Excellent</div>
                           )}
                         </div>
-                        <div style={{ fontSize: "28px", fontWeight: "bold", color: "#2563eb", marginBottom: "6px" }}>{reopeningRateDisplay}</div>
-                        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>Taux de réouverture</div>
-                        <div style={{ fontSize: "12px", color: "#9ca3af" }}>Tickets rouverts après résolution</div>
+                        <div style={{ fontSize: "22px", fontWeight: "bold", color: "#2563eb", marginBottom: "4px" }}>{reopeningRateDisplay}</div>
+                        <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "2px" }}>Taux de réouverture</div>
+                        <div style={{ fontSize: "10px", color: "#9ca3af" }}>Tickets rouverts après résolution</div>
                       </div>
                     </div>
                     
@@ -5362,8 +6849,18 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                     
                     {/* Boutons d'export */}
                     <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
-                      <button style={{ padding: "10px 20px", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "500" }}>Exporter PDF</button>
-                      <button style={{ padding: "10px 20px", backgroundColor: "#28a745", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "500" }}>Exporter Excel</button>
+                      <button 
+                        onClick={() => exportToPDF()}
+                        style={{ padding: "10px 20px", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "500" }}
+                      >
+                        Exporter PDF
+                      </button>
+                      <button 
+                        onClick={() => exportToExcel()}
+                        style={{ padding: "10px 20px", backgroundColor: "#28a745", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "500" }}
+                      >
+                        Exporter Excel
+                      </button>
                     </div>
                   </div>
                 );
@@ -5421,24 +6918,23 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                         {Array.from(new Set(allTickets.map((t) => t.creator?.agency || t.user_agency).filter(Boolean))).map((agency) => {
                           const agencyTickets = allTickets.filter((t) => (t.creator?.agency || t.user_agency) === agency);
                           
-                          // Calculer le temps moyen de résolution pour cette agence
+                          // Calculer le temps moyen de résolution pour cette agence (uniquement avec dates réelles)
                           const resolvedAgencyTickets = agencyTickets.filter(t => t.status === "resolu" || t.status === "cloture");
                           let totalResolutionTime = 0;
                           let countWithDates = 0;
                           
                           resolvedAgencyTickets.forEach(ticket => {
-                            if (ticket.created_at) {
+                            // Ne compter que les tickets avec une date de création ET une date de résolution/clôture réelle
+                            if (ticket.created_at && (ticket.resolved_at || ticket.closed_at)) {
                               const created = new Date(ticket.created_at);
-                              let resolved = new Date();
-                              if (ticket.resolved_at) {
-                                resolved = new Date(ticket.resolved_at);
-                              } else if (ticket.closed_at) {
-                                resolved = new Date(ticket.closed_at);
-                              }
+                              const resolved = ticket.resolved_at ? new Date(ticket.resolved_at) : new Date(ticket.closed_at!);
                               const diffTime = resolved.getTime() - created.getTime();
                               const diffDays = diffTime / (1000 * 60 * 60 * 24);
-                              totalResolutionTime += diffDays;
-                              countWithDates++;
+                              // Ne compter que si le résultat est valide (différence positive)
+                              if (diffDays >= 0) {
+                                totalResolutionTime += diffDays;
+                                countWithDates++;
+                              }
                             }
                           });
                           
@@ -5839,8 +7335,18 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                   )}
 
                   <div style={{ display: "flex", gap: "12px", marginTop: "32px", paddingTop: "24px", borderTop: "1px solid #e5e7eb" }}>
-                    <button style={{ padding: "10px 20px", backgroundColor: colors.primary, color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "500" }}>Exporter PDF</button>
-                    <button style={{ padding: "10px 20px", backgroundColor: colors.success, color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "500" }}>Exporter Excel</button>
+                    <button 
+                      onClick={() => exportToPDF()}
+                      style={{ padding: "10px 20px", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "500" }}
+                    >
+                      Exporter PDF
+                    </button>
+                    <button 
+                      onClick={() => exportToExcel()}
+                      style={{ padding: "10px 20px", backgroundColor: "#28a745", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "500" }}
+                    >
+                      Exporter Excel
+                    </button>
                   </div>
                 </div>
               )}

@@ -515,12 +515,16 @@ def reassign_ticket(
     # Créer une notification pour le créateur du ticket
     creator_notification = models.Notification(
         user_id=ticket.creator_id,
-        type=models.NotificationType.TICKET_ASSIGNE,
+        type=models.NotificationType.TECHNICIEN_CHANGE,
         ticket_id=ticket.id,
         message=f"Votre ticket #{ticket.number} a été réassigné à un autre technicien: {ticket.title}",
         read=False
     )
     db.add(creator_notification)
+    
+    # Récupérer le créateur pour l'email
+    creator = db.query(models.User).filter(models.User.id == ticket.creator_id).first()
+    old_technician_name = old_technician.full_name if old_technician else None
     
     db.commit()
     db.refresh(ticket)
@@ -536,6 +540,19 @@ def reassign_ticket(
             technician_name=technician.full_name,
             priority=ticket.priority,
             notes=assign_data.notes or assign_data.reason
+        )
+    
+    # Envoyer un email au créateur pour le changement de technicien
+    if creator and creator.email and creator.email.strip():
+        background_tasks.add_task(
+            email_service.send_technician_changed_notification,
+            ticket_id=str(ticket.id),
+            ticket_number=ticket.number,
+            ticket_title=ticket.title,
+            creator_email=creator.email,
+            creator_name=creator.full_name,
+            old_technician_name=old_technician_name,
+            new_technician_name=technician.full_name
         )
     
     # Charger les relations pour la réponse
@@ -659,6 +676,7 @@ def escalate_ticket(
 def update_ticket_status(
     ticket_id: UUID,
     status_update: schemas.TicketUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -668,6 +686,10 @@ def update_ticket_status(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found"
         )
+    
+    # Récupérer le créateur pour les emails
+    creator = db.query(models.User).filter(models.User.id == ticket.creator_id).first()
+    technician = db.query(models.User).filter(models.User.id == ticket.technician_id).first() if ticket.technician_id else None
     
     # Vérifier les permissions selon le statut
     if status_update.status == models.TicketStatus.RESOLU:
@@ -682,12 +704,24 @@ def update_ticket_status(
         # Créer une notification pour l'utilisateur créateur
         notification = models.Notification(
             user_id=ticket.creator_id,
-            type=models.NotificationType.RESOLUTION,
+            type=models.NotificationType.TICKET_RESOLU,
             ticket_id=ticket.id,
             message=f"Votre ticket #{ticket.number} a été résolu. Veuillez valider la résolution.",
             read=False
         )
         db.add(notification)
+        
+        # Envoyer un email au créateur
+        if creator and creator.email and creator.email.strip():
+            background_tasks.add_task(
+                email_service.send_ticket_resolved_notification,
+                ticket_id=str(ticket.id),
+                ticket_number=ticket.number,
+                ticket_title=ticket.title,
+                creator_email=creator.email,
+                creator_name=creator.full_name,
+                resolution_summary=status_update.resolution_summary
+            )
     elif status_update.status == models.TicketStatus.CLOTURE:
         # Seuls secrétaire/adjoint/DSI/Admin peuvent clôturer
         if not current_user.role or current_user.role.name not in ["Secrétaire DSI", "Adjoint DSI", "DSI", "Admin"]:
@@ -707,6 +741,17 @@ def update_ticket_status(
         )
         db.add(creator_notification)
         
+        # Envoyer un email au créateur
+        if creator and creator.email and creator.email.strip():
+            background_tasks.add_task(
+                email_service.send_ticket_closed_notification_to_user,
+                ticket_id=str(ticket.id),
+                ticket_number=ticket.number,
+                ticket_title=ticket.title,
+                creator_email=creator.email,
+                creator_name=creator.full_name
+            )
+        
         # Créer une notification pour le technicien assigné s'il existe
         if ticket.technician_id:
             tech_notification = models.Notification(
@@ -723,6 +768,50 @@ def update_ticket_status(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only assigned technician can set in progress"
+            )
+        
+        # Créer une notification pour l'utilisateur créateur
+        creator_notification = models.Notification(
+            user_id=ticket.creator_id,
+            type=models.NotificationType.TICKET_EN_COURS,
+            ticket_id=ticket.id,
+            message=f"Votre ticket #{ticket.number} est maintenant en cours de traitement: {ticket.title}",
+            read=False
+        )
+        db.add(creator_notification)
+        
+        # Envoyer un email au créateur
+        if creator and creator.email and creator.email.strip() and technician:
+            background_tasks.add_task(
+                email_service.send_ticket_in_progress_notification,
+                ticket_id=str(ticket.id),
+                ticket_number=ticket.number,
+                ticket_title=ticket.title,
+                creator_email=creator.email,
+                creator_name=creator.full_name,
+                technician_name=technician.full_name
+            )
+    elif status_update.status == models.TicketStatus.REJETE:
+        # Créer une notification pour l'utilisateur créateur
+        creator_notification = models.Notification(
+            user_id=ticket.creator_id,
+            type=models.NotificationType.TICKET_REJETE,
+            ticket_id=ticket.id,
+            message=f"Votre ticket #{ticket.number} a été rejeté: {ticket.title}",
+            read=False
+        )
+        db.add(creator_notification)
+        
+        # Envoyer un email au créateur
+        if creator and creator.email and creator.email.strip():
+            background_tasks.add_task(
+                email_service.send_ticket_rejected_notification_to_user,
+                ticket_id=str(ticket.id),
+                ticket_number=ticket.number,
+                ticket_title=ticket.title,
+                creator_email=creator.email,
+                creator_name=creator.full_name,
+                rejection_reason=status_update.rejection_reason if hasattr(status_update, 'rejection_reason') else None
             )
     
     old_status = ticket.status
@@ -762,6 +851,7 @@ def update_ticket_status(
 def add_comment(
     ticket_id: UUID,
     comment_in: schemas.CommentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -781,6 +871,34 @@ def add_comment(
     db.add(comment)
     db.commit()
     db.refresh(comment)
+    
+    # Si le commentaire n'est pas de l'utilisateur créateur, notifier le créateur
+    if ticket.creator_id != current_user.id:
+        creator = db.query(models.User).filter(models.User.id == ticket.creator_id).first()
+        if creator:
+            # Créer une notification pour le créateur
+            notification = models.Notification(
+                user_id=ticket.creator_id,
+                type=models.NotificationType.COMMENTAIRE,
+                ticket_id=ticket.id,
+                message=f"Un nouveau commentaire a été ajouté sur votre ticket #{ticket.number}: {ticket.title}",
+                read=False
+            )
+            db.add(notification)
+            db.commit()
+            
+            # Envoyer un email au créateur
+            if creator.email and creator.email.strip():
+                background_tasks.add_task(
+                    email_service.send_comment_notification_to_user,
+                    ticket_id=str(ticket.id),
+                    ticket_number=ticket.number,
+                    ticket_title=ticket.title,
+                    creator_email=creator.email,
+                    creator_name=creator.full_name,
+                    commenter_name=current_user.full_name,
+                    comment_content=comment_in.content
+                )
     
     return comment
 
@@ -811,6 +929,7 @@ def get_ticket_comments(
 def validate_ticket_resolution(
     ticket_id: UUID,
     validation: schemas.TicketValidation,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -842,6 +961,30 @@ def validate_ticket_resolution(
         ticket.status = models.TicketStatus.CLOTURE
         ticket.closed_at = datetime.utcnow()
         history_reason = "Validation utilisateur: Validé"
+        
+        # Récupérer le créateur pour l'email
+        creator = db.query(models.User).filter(models.User.id == ticket.creator_id).first()
+        
+        # Créer une notification pour le créateur
+        creator_notification = models.Notification(
+            user_id=ticket.creator_id,
+            type=models.NotificationType.TICKET_CLOTURE,
+            ticket_id=ticket.id,
+            message=f"Votre ticket #{ticket.number} a été clôturé: {ticket.title}",
+            read=False
+        )
+        db.add(creator_notification)
+        
+        # Envoyer un email au créateur
+        if creator and creator.email and creator.email.strip():
+            background_tasks.add_task(
+                email_service.send_ticket_closed_notification_to_user,
+                ticket_id=str(ticket.id),
+                ticket_number=ticket.number,
+                ticket_title=ticket.title,
+                creator_email=creator.email,
+                creator_name=creator.full_name
+            )
         
         # Créer une notification pour le technicien assigné
         if ticket.technician_id:
@@ -1160,10 +1303,138 @@ def submit_ticket_feedback(
     return ticket
 
 
+@router.put("/{ticket_id}/reopen-by-user", response_model=schemas.TicketRead)
+def reopen_ticket_by_user(
+    ticket_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Permet à l'utilisateur créateur de réouvrir un ticket clôturé automatiquement (dans les 7 jours)"""
+    ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found"
+        )
+    
+    # Vérifier que c'est le créateur du ticket
+    if ticket.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only ticket creator can reopen this ticket"
+        )
+    
+    # Vérifier que le ticket a été clôturé automatiquement
+    if not ticket.auto_closed_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This ticket was not auto-closed. Use the regular reopen endpoint."
+        )
+    
+    # Vérifier que le ticket est clôturé
+    if ticket.status != models.TicketStatus.CLOTURE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ticket is not closed"
+        )
+    
+    # Vérifier que moins de 7 jours se sont écoulés depuis la clôture automatique
+    now = datetime.utcnow()
+    days_since_auto_close = (now - ticket.auto_closed_at).days
+    if days_since_auto_close > 7:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The 7-day period to reopen this ticket has expired. Please create a new ticket."
+        )
+    
+    old_status = ticket.status
+    
+    # Réouvrir le ticket : remettre en attente d'analyse
+    ticket.status = models.TicketStatus.EN_ATTENTE_ANALYSE
+    ticket.auto_closed_at = None  # Réinitialiser le flag de clôture automatique
+    ticket.closed_at = None  # Réinitialiser la date de clôture
+    ticket.resolved_at = None  # Réinitialiser la date de résolution
+    ticket.technician_id = None  # Retirer l'assignation du technicien
+    
+    # Créer une entrée d'historique
+    history = models.TicketHistory(
+        ticket_id=ticket.id,
+        old_status=old_status,
+        new_status=ticket.status,
+        user_id=current_user.id,
+        reason="Ticket réouvert par l'utilisateur après clôture automatique"
+    )
+    db.add(history)
+    
+    # Créer une notification pour le créateur
+    creator_notification = models.Notification(
+        user_id=ticket.creator_id,
+        type=models.NotificationType.TICKET_REOUVERT,
+        ticket_id=ticket.id,
+        message=f"Votre ticket #{ticket.number} a été réouvert: {ticket.title}",
+        read=False
+    )
+    db.add(creator_notification)
+    
+    # Notifier les secrétaires/adjoints/DSI
+    target_roles = db.query(models.Role).filter(
+        models.Role.name.in_(["Secrétaire DSI", "Adjoint DSI", "DSI", "Admin"])
+    ).all()
+    
+    for role in target_roles:
+        users = (
+            db.query(models.User)
+            .options(joinedload(models.User.role))
+            .filter(
+                models.User.role_id == role.id,
+                func.lower(models.User.status).in_(["actif", "active"])
+            )
+            .all()
+        )
+        for user in users:
+            notification = models.Notification(
+                user_id=user.id,
+                type=models.NotificationType.NOUVEAU_TICKET,
+                ticket_id=ticket.id,
+                message=f"Ticket #{ticket.number} réouvert par l'utilisateur: {ticket.title}",
+                read=False
+            )
+            db.add(notification)
+    
+    db.commit()
+    db.refresh(ticket)
+    
+    # Envoyer un email au créateur
+    creator = db.query(models.User).filter(models.User.id == ticket.creator_id).first()
+    if creator and creator.email and creator.email.strip():
+        background_tasks.add_task(
+            email_service.send_ticket_reopened_notification,
+            ticket_id=str(ticket.id),
+            ticket_number=ticket.number,
+            ticket_title=ticket.title,
+            creator_email=creator.email,
+            creator_name=creator.full_name
+        )
+    
+    # Charger les relations pour la réponse
+    ticket = (
+        db.query(models.Ticket)
+        .options(
+            joinedload(models.Ticket.creator),
+            joinedload(models.Ticket.technician)
+        )
+        .filter(models.Ticket.id == ticket.id)
+        .first()
+    )
+    
+    return ticket
+
+
 @router.put("/{ticket_id}/reopen", response_model=schemas.TicketRead)
 def reopen_ticket(
     ticket_id: UUID,
     assign_data: schemas.TicketAssign,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(
         require_role("Secrétaire DSI", "Adjoint DSI", "DSI", "Admin")
@@ -1207,17 +1478,32 @@ def reopen_ticket(
         reason=f"Ticket réouvert et réassigné. Raison: {assign_data.reason or 'N/A'}"
     )
     db.add(history)
+    # Récupérer le créateur pour l'email
+    creator = db.query(models.User).filter(models.User.id == ticket.creator_id).first()
+    
     if ticket.creator_id:
         creator_notification = models.Notification(
             user_id=ticket.creator_id,
-            type=models.NotificationType.TICKET_ASSIGNE,
+            type=models.NotificationType.TICKET_REOUVERT,
             ticket_id=ticket.id,
-            message=f"Le technicien a repris votre ticket #{ticket.number} pour correction: {ticket.title}",
+            message=f"Votre ticket #{ticket.number} a été réouvert et réassigné: {ticket.title}",
             read=False
         )
         db.add(creator_notification)
+    
     db.commit()
     db.refresh(ticket)
+    
+    # Envoyer un email au créateur
+    if creator and creator.email and creator.email.strip():
+        background_tasks.add_task(
+            email_service.send_ticket_reopened_notification,
+            ticket_id=str(ticket.id),
+            ticket_number=ticket.number,
+            ticket_title=ticket.title,
+            creator_email=creator.email,
+            creator_name=creator.full_name
+        )
     
     # Charger les relations pour la réponse
     ticket = (

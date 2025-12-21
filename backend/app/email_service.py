@@ -628,6 +628,636 @@ Cordialement,
 """
         
         return self.send_email([adjoint_email], subject, body, html_body)
+    
+    def send_ticket_in_progress_notification(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str,
+        technician_name: str
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque le ticket est en cours de traitement"""
+        subject = f"Votre ticket #{ticket_number} est en cours de traitement"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Votre ticket est maintenant en cours de traitement par le technicien.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+• Technicien : {technician_name}
+
+Vous serez notifié lorsque le ticket sera résolu.
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Ticket en cours de traitement</h2>
+    <p>Bonjour {creator_name},</p>
+    <p>Votre ticket est maintenant en cours de traitement par le technicien.</p>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+            <li><strong>Technicien :</strong> {technician_name}</li>
+        </ul>
+    </div>
+    <p>Vous serez notifié lorsque le ticket sera résolu.</p>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_ticket_resolved_notification(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str,
+        resolution_summary: Optional[str] = None
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque le ticket est résolu"""
+        subject = f"Votre ticket #{ticket_number} a été résolu - Validation requise"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Votre ticket a été résolu. Veuillez valider la résolution.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+"""
+        if resolution_summary:
+            body += f"• Résumé de la résolution : {resolution_summary}\n"
+        
+        body += f"""
+Merci de valider la résolution dans les 14 jours. Si vous ne validez pas, le ticket sera clôturé automatiquement.
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Ticket résolu - Validation requise</h2>
+    <p>Bonjour {creator_name},</p>
+    <p>Votre ticket a été résolu. Veuillez valider la résolution.</p>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+        </ul>
+    </div>
+"""
+        if resolution_summary:
+            html_body += f"""
+    <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Résumé de la résolution :</strong></p>
+        <p>{resolution_summary}</p>
+    </div>
+"""
+        html_body += f"""
+    <p style="color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 5px;">
+        <strong>⚠️ Important :</strong> Merci de valider la résolution dans les 14 jours. Si vous ne validez pas, le ticket sera clôturé automatiquement.
+    </p>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#28a745;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block;font-weight:bold">Valider la résolution</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_validation_reminder(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str,
+        reminder_number: int,
+        days_since_resolution: int
+    ) -> bool:
+        """Envoie un rappel de validation à l'utilisateur"""
+        subjects = {
+            1: f"Rappel : Veuillez valider votre ticket #{ticket_number}",
+            2: f"Second rappel : Validation requise pour votre ticket #{ticket_number}",
+            3: f"Dernier rappel : Veuillez valider votre ticket #{ticket_number}"
+        }
+        subject = subjects.get(reminder_number, f"Rappel : Validation requise pour votre ticket #{ticket_number}")
+        
+        messages = {
+            1: f"Votre ticket a été résolu il y a {days_since_resolution} jours. Veuillez valider la résolution.",
+            2: f"Votre ticket a été résolu il y a {days_since_resolution} jours. Validation requise.",
+            3: f"⚠️ Dernier rappel : Votre ticket a été résolu il y a {days_since_resolution} jours. Si vous ne validez pas dans les prochains jours, le ticket sera clôturé automatiquement."
+        }
+        message = messages.get(reminder_number, f"Votre ticket a été résolu il y a {days_since_resolution} jours.")
+        
+        body = f"""
+Bonjour {creator_name},
+
+{message}
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+
+Merci de valider la résolution dès que possible.
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        
+        urgency_style = "background-color: #f8d7da; border-left: 4px solid #dc3545;" if reminder_number == 3 else "background-color: #fff3cd; border-left: 4px solid #ffc107;"
+        
+        html_body = f"""
+<html>
+<body>
+    <h2>Rappel de validation</h2>
+    <p>Bonjour {creator_name},</p>
+    <div style="{urgency_style} padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>{message}</strong></p>
+    </div>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+        </ul>
+    </div>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#28a745;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block;font-weight:bold">Valider la résolution</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_ticket_auto_closed_notification(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque le ticket est clôturé automatiquement"""
+        subject = f"Votre ticket #{ticket_number} a été clôturé automatiquement"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Votre ticket a été clôturé automatiquement après 14 jours sans validation.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+
+Vous pouvez réouvrir ce ticket dans les 7 prochains jours si le problème persiste. Après cette période, vous devrez créer un nouveau ticket.
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Ticket clôturé automatiquement</h2>
+    <p>Bonjour {creator_name},</p>
+    <div style="background-color: #f8d7da; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #dc3545;">
+        <p><strong>Votre ticket a été clôturé automatiquement après 14 jours sans validation.</strong></p>
+    </div>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+        </ul>
+    </div>
+    <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>⚠️ Important :</strong> Vous pouvez réouvrir ce ticket dans les <strong>7 prochains jours</strong> si le problème persiste. Après cette période, vous devrez créer un nouveau ticket.</p>
+    </div>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_ticket_rejected_notification_to_user(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str,
+        rejection_reason: Optional[str] = None
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque son ticket est rejeté"""
+        subject = f"Votre ticket #{ticket_number} a été rejeté"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Votre ticket a été rejeté.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+"""
+        if rejection_reason:
+            body += f"• Raison du rejet : {rejection_reason}\n"
+        
+        body += f"""
+Si vous avez des questions, n'hésitez pas à contacter le support.
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Ticket rejeté</h2>
+    <p>Bonjour {creator_name},</p>
+    <div style="background-color: #f8d7da; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #dc3545;">
+        <p><strong>Votre ticket a été rejeté.</strong></p>
+    </div>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+        </ul>
+    </div>
+"""
+        if rejection_reason:
+            html_body += f"""
+    <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Raison du rejet :</strong></p>
+        <p>{rejection_reason}</p>
+    </div>
+"""
+        html_body += f"""
+    <p>Si vous avez des questions, n'hésitez pas à contacter le support.</p>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_comment_notification_to_user(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str,
+        commenter_name: str,
+        comment_content: str
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsqu'un commentaire est ajouté"""
+        subject = f"Nouveau commentaire sur votre ticket #{ticket_number}"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Un nouveau commentaire a été ajouté sur votre ticket.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+• Commentaire de : {commenter_name}
+
+Commentaire :
+{comment_content}
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Nouveau commentaire</h2>
+    <p>Bonjour {creator_name},</p>
+    <p>Un nouveau commentaire a été ajouté sur votre ticket.</p>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+            <li><strong>Commentaire de :</strong> {commenter_name}</li>
+        </ul>
+    </div>
+    <div style="background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #007bff;">
+        <p><strong>Commentaire :</strong></p>
+        <p>{comment_content}</p>
+    </div>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_priority_changed_notification(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str,
+        old_priority: str,
+        new_priority: str
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque la priorité change"""
+        subject = f"Priorité modifiée pour votre ticket #{ticket_number}"
+        
+        body = f"""
+Bonjour {creator_name},
+
+La priorité de votre ticket a été modifiée.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+• Ancienne priorité : {old_priority}
+• Nouvelle priorité : {new_priority}
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Priorité modifiée</h2>
+    <p>Bonjour {creator_name},</p>
+    <p>La priorité de votre ticket a été modifiée.</p>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+            <li><strong>Ancienne priorité :</strong> {old_priority}</li>
+            <li><strong>Nouvelle priorité :</strong> <strong style="color: #dc3545;">{new_priority}</strong></li>
+        </ul>
+    </div>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_technician_changed_notification(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str,
+        old_technician_name: Optional[str],
+        new_technician_name: str
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque le technicien change"""
+        subject = f"Technicien modifié pour votre ticket #{ticket_number}"
+        
+        technician_info = f"• Nouveau technicien : {new_technician_name}"
+        if old_technician_name:
+            technician_info = f"• Ancien technicien : {old_technician_name}\n{technician_info}"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Votre ticket a été réassigné à un autre technicien.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+{technician_info}
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Technicien modifié</h2>
+    <p>Bonjour {creator_name},</p>
+    <p>Votre ticket a été réassigné à un autre technicien.</p>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+"""
+        if old_technician_name:
+            html_body += f"            <li><strong>Ancien technicien :</strong> {old_technician_name}</li>\n"
+        html_body += f"""            <li><strong>Nouveau technicien :</strong> {new_technician_name}</li>
+        </ul>
+    </div>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_ticket_reopened_notification(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque le ticket est réouvert"""
+        subject = f"Votre ticket #{ticket_number} a été réouvert"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Votre ticket a été réouvert pour traitement supplémentaire.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+
+Le ticket sera traité à nouveau par un technicien.
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Ticket réouvert</h2>
+    <p>Bonjour {creator_name},</p>
+    <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #0dcaf0;">
+        <p><strong>Votre ticket a été réouvert pour traitement supplémentaire.</strong></p>
+    </div>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+        </ul>
+    </div>
+    <p>Le ticket sera traité à nouveau par un technicien.</p>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
+    
+    def send_ticket_closed_notification_to_user(
+        self,
+        ticket_id: str,
+        ticket_number: int,
+        ticket_title: str,
+        creator_email: str,
+        creator_name: str
+    ) -> bool:
+        """Envoie une notification à l'utilisateur lorsque le ticket est clôturé (après validation)"""
+        subject = f"Votre ticket #{ticket_number} a été clôturé"
+        
+        body = f"""
+Bonjour {creator_name},
+
+Votre ticket a été clôturé avec succès.
+
+Détails du ticket :
+• Numéro : #{ticket_number}
+• Titre : {ticket_title}
+
+Merci d'avoir utilisé notre service de support.
+
+Cordialement,
+{self.sender_name}
+"""
+        
+        redirect_params = urlencode({
+            "redirect": "/dashboard/user",
+            "ticket": ticket_id
+        })
+        action_link = f"{self.app_base_url}/login?{redirect_params}"
+        html_body = f"""
+<html>
+<body>
+    <h2>Ticket clôturé</h2>
+    <p>Bonjour {creator_name},</p>
+    <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
+        <p><strong>Votre ticket a été clôturé avec succès.</strong></p>
+    </div>
+    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Détails du ticket :</strong></p>
+        <ul>
+            <li><strong>Numéro :</strong> #{ticket_number}</li>
+            <li><strong>Titre :</strong> {ticket_title}</li>
+        </ul>
+    </div>
+    <p>Merci d'avoir utilisé notre service de support.</p>
+    <div style="margin: 20px 0;">
+        <a href="{action_link}" style="background:#007bff;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;display:inline-block">Voir le ticket</a>
+    </div>
+    <p>Cordialement,<br>{self.sender_name}</p>
+</body>
+</html>
+"""
+        
+        return self.send_email([creator_email], subject, body, html_body)
 
 
 # Instance globale du service email

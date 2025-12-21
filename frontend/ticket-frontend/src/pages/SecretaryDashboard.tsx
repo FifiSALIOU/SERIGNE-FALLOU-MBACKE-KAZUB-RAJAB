@@ -89,6 +89,7 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [agencyFilter, setAgencyFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [delegationFilter, setDelegationFilter] = useState<string>("all");
   const [showReportsDropdown, setShowReportsDropdown] = useState<boolean>(false);
   const [selectedReport, setSelectedReport] = useState<string>("");
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -1339,6 +1340,15 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
   if (priorityFilter !== "all") {
     filteredTickets = filteredTickets.filter((t) => t.priority === priorityFilter);
   }
+  
+  // Filtre par délégation (UNIQUEMENT pour l'adjoint DSI)
+  if (roleName === "Adjoint DSI" && delegationFilter !== "all") {
+    if (delegationFilter === "delegated") {
+      filteredTickets = filteredTickets.filter((t) => t.secretary_id === userInfo?.id);
+    } else if (delegationFilter === "not_delegated") {
+      filteredTickets = filteredTickets.filter((t) => t.secretary_id !== userInfo?.id);
+    }
+  }
 
   // Récupérer toutes les agences uniques
   const allAgencies = Array.from(new Set(
@@ -2042,6 +2052,26 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                     <option value="faible">Faible</option>
                   </select>
                 </div>
+                {roleName === "Adjoint DSI" && (
+                  <div style={{ flex: 1, minWidth: "200px" }}>
+                    <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#666" }}>Filtrer par délégation</label>
+                    <select
+                      value={delegationFilter}
+                      onChange={(e) => setDelegationFilter(e.target.value)}
+                      style={{ 
+                        width: "100%", 
+                        padding: "8px 12px", 
+                        border: "1px solid #ddd", 
+                        borderRadius: "4px",
+                        fontSize: "14px"
+                      }}
+                    >
+                      <option value="all">Tous les tickets</option>
+                      <option value="delegated">Tickets délégués par DSI</option>
+                      <option value="not_delegated">Tickets non délégués</option>
+                    </select>
+                  </div>
+                )}
               </div>
               
               {(() => {
@@ -2065,6 +2095,15 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                 // Filtre par priorité
                 if (priorityFilter !== "all") {
                   filtered = filtered.filter((t) => t.priority === priorityFilter);
+                }
+                
+                // Filtre par délégation (UNIQUEMENT pour l'adjoint DSI)
+                if (roleName === "Adjoint DSI" && delegationFilter !== "all") {
+                  if (delegationFilter === "delegated") {
+                    filtered = filtered.filter((t) => t.secretary_id === userInfo?.id);
+                  } else if (delegationFilter === "not_delegated") {
+                    filtered = filtered.filter((t) => t.secretary_id !== userInfo?.id);
+                  }
                 }
                 
                 // Obtenir les tickets récents triés par date de création décroissante
@@ -3085,6 +3124,26 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                     <option value="faible">Faible</option>
                   </select>
                 </div>
+                {roleName === "Adjoint DSI" && (
+                  <div style={{ flex: 1, minWidth: "200px" }}>
+                    <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "500", color: "#666" }}>Filtrer par délégation</label>
+                    <select
+                      value={delegationFilter}
+                      onChange={(e) => setDelegationFilter(e.target.value)}
+                      style={{ 
+                        width: "100%", 
+                        padding: "8px 12px", 
+                        border: "1px solid #ddd", 
+                        borderRadius: "4px",
+                        fontSize: "14px"
+                      }}
+                    >
+                      <option value="all">Tous les tickets</option>
+                      <option value="delegated">Tickets délégués par DSI</option>
+                      <option value="not_delegated">Tickets non délégués</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <table style={{ width: "100%", borderCollapse: "collapse", background: "white", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
