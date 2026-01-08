@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import type { FormEvent } from "react";
-import { PanelLeft, AlertCircle, Clock, CheckCircle, LayoutDashboard, PlusCircle, Ticket, ChevronLeft, ChevronRight, Bell } from "lucide-react";
+import { Clock, CheckCircle, LayoutDashboard, PlusCircle, Ticket, ChevronLeft, ChevronRight, Bell } from "lucide-react";
 import helpdeskLogo from "../assets/helpdesk-logo.png";
 
 interface UserDashboardProps {
@@ -1287,19 +1287,20 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
           transition: "left 0.3s ease"
         }}>
           {/* Left side - Title */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
             <div style={{ 
               fontSize: "20px", 
-              fontWeight: "700", 
+              fontWeight: "700",
               color: "#111827",
-              lineHeight: "1.2"
+              fontFamily: "system-ui, -apple-system, sans-serif"
             }}>
               Tableau de bord
             </div>
             <div style={{ 
-              fontSize: "14px", 
+              fontSize: "13px", 
+              fontWeight: "400",
               color: "#6b7280",
-              lineHeight: "1.2"
+              fontFamily: "system-ui, -apple-system, sans-serif"
             }}>
               Vue d'ensemble de votre activité
             </div>
@@ -1379,8 +1380,8 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             {/* Header retiré */}
 
             {/* Message d'accueil */}
-            <div style={{ marginTop: "24px", marginBottom: "30px" }}>
-              <div style={{ fontSize: "24px", fontWeight: "700", color: "#111827", marginBottom: "8px" }}>
+            <div style={{ marginTop: "40px", marginBottom: "30px" }}>
+              <div style={{ fontSize: "22px", fontWeight: "700", color: "#111827", marginBottom: "8px" }}>
                 Bonjour {userInfo?.full_name ? userInfo.full_name.split(' ')[0] : 'Jean'} 👋
               </div>
               <div style={{ fontSize: "16px", color: "#4b5563", lineHeight: "1.5" }}>
@@ -1409,9 +1410,24 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                   borderRadius: "12px",
                   background: "white",
                   boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                  minHeight: "100px"
+                  minHeight: "100px",
+                  overflow: "hidden"
                 }}
               >
+                {/* Cercle décoratif orange en arrière-plan - coin supérieur droit */}
+                <div style={{
+                  position: "absolute",
+                  right: "-16px",
+                  top: "-16px",
+                  width: "96px",
+                  height: "96px",
+                  borderRadius: "50%",
+                  background: "#ea580c",
+                  opacity: 0.05,
+                  zIndex: 0,
+                  transition: "transform 0.3s ease"
+                }}></div>
+
                 <div style={{ 
                   display: "flex", 
                   justifyContent: "space-between", 
@@ -1426,15 +1442,20 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                     background: "#fff4e6",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center"
+                    justifyContent: "center",
+                    zIndex: 1,
+                    position: "relative"
                   }}>
-                    <AlertCircle size={16} color="#ea580c" />
+                    <Clock size={16} color="#ea580c" />
+                  </div>
+                  <div style={{ color: "#6b7280", fontSize: "11px", fontWeight: "500" }}>
+                    En attente
                   </div>
                 </div>
-                <span style={{ fontSize: "28px", fontWeight: "bold", color: "#1f2937", marginBottom: "4px" }}>
+                <span style={{ fontSize: "28px", fontWeight: "bold", color: "#1f2937", marginBottom: "4px", zIndex: 1, position: "relative" }}>
                   {statusCounts.en_attente_analyse}
                 </span>
-                <span style={{ fontSize: "13px", fontWeight: "500", color: "#4b5563" }}>En attente d'assignation</span>
+                <span style={{ fontSize: "13px", fontWeight: "500", color: "#4b5563", zIndex: 1, position: "relative" }}>En attente d'assignation</span>
               </div>
 
               {/* En cours */}
@@ -1449,9 +1470,24 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                   borderRadius: "12px",
                   background: "white",
                   boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                  minHeight: "100px"
+                  minHeight: "100px",
+                  overflow: "hidden"
                 }}
               >
+                {/* Cercle décoratif bleu en arrière-plan - coin supérieur droit */}
+                <div style={{
+                  position: "absolute",
+                  right: "-16px",
+                  top: "-16px",
+                  width: "96px",
+                  height: "96px",
+                  borderRadius: "50%",
+                  background: "#0284c7",
+                  opacity: 0.05,
+                  zIndex: 0,
+                  transition: "transform 0.3s ease"
+                }}></div>
+
                 <div style={{ 
                   display: "flex", 
                   justifyContent: "space-between", 
@@ -1492,9 +1528,24 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                   borderRadius: "12px",
                   background: "white",
                   boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                  minHeight: "100px"
+                  minHeight: "100px",
+                  overflow: "hidden"
                 }}
               >
+                {/* Cercle décoratif vert en arrière-plan - coin supérieur droit */}
+                <div style={{
+                  position: "absolute",
+                  right: "-16px",
+                  top: "-16px",
+                  width: "96px",
+                  height: "96px",
+                  borderRadius: "50%",
+                  background: "#16a34a",
+                  opacity: 0.05,
+                  zIndex: 0,
+                  transition: "transform 0.3s ease"
+                }}></div>
+
                 <div style={{ 
                   display: "flex", 
                   justifyContent: "space-between", 

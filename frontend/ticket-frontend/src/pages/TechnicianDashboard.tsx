@@ -1092,35 +1092,35 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
           top: 0,
           left: sidebarCollapsed ? "80px" : "250px",
           right: 0,
-          background: "hsl(226, 34%, 15%)",
+          background: "hsl(0, 0%, 100%)",
           padding: "16px 30px",
-          borderBottom: "1px solid #0f172a",
+          borderBottom: "1px solid #e5e7eb",
           zIndex: 99,
           transition: "left 0.3s ease"
         }}>
           <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             {/* Partie gauche - Titre */}
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div style={{ fontSize: "18px", fontWeight: "600", color: "white" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+              <div style={{ 
+                fontSize: "20px", 
+                fontWeight: "700",
+                color: "#111827",
+                fontFamily: "system-ui, -apple-system, sans-serif"
+              }}>
+                Tableau de bord
+              </div>
+              <div style={{ 
+                fontSize: "13px", 
+                fontWeight: "400",
+                color: "#6b7280",
+                fontFamily: "system-ui, -apple-system, sans-serif"
+              }}>
+                Vue d'ensemble de votre activité
               </div>
             </div>
             
             {/* Partie droite - Actions */}
             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-              {/* Message de bienvenue */}
-              {userInfo && (
-                <span
-                  style={{
-                    color: "white",
-                    fontSize: "14px",
-                    fontWeight: "400",
-                    fontFamily: "system-ui, -apple-system, sans-serif",
-                    marginRight: "8px",
-                  }}
-                >
-                  Bienvenue Dans Votre Espace Technicien, {userInfo.full_name.toUpperCase()}
-                </span>
-              )}
 
               {/* Icône boîte de réception - tickets à résoudre */}
               <div
@@ -1131,17 +1131,17 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  color: "white",
+                  color: "#000000",
                   position: "relative",
                   opacity: ticketsToResolveCount > 0 ? 1 : 0.5,
                 }}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="4" y="6" width="16" height="12" rx="1" />
-                  <circle cx="4" cy="10" r="1" fill="white" />
-                  <circle cx="4" cy="14" r="1" fill="white" />
-                  <circle cx="20" cy="10" r="1" fill="white" />
-                  <circle cx="20" cy="14" r="1" fill="white" />
+                  <circle cx="4" cy="10" r="1" fill="#000000" />
+                  <circle cx="4" cy="14" r="1" fill="#000000" />
+                  <circle cx="20" cy="10" r="1" fill="#000000" />
+                  <circle cx="20" cy="14" r="1" fill="#000000" />
                 </svg>
                 {ticketsToResolveCount > 0 && (
                   <span
@@ -1153,7 +1153,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                       height: "18px",
                       background: "#22c55e",
                       borderRadius: "50%",
-                      border: "2px solid #1e293b",
+                      border: "2px solid white",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -1178,7 +1178,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                   display: "flex", 
                   alignItems: "center", 
                   justifyContent: "center",
-                  color: "white",
+                  color: "#000000",
                   position: "relative"
                 }}>
                 <Bell size={20} color="#000000" />
@@ -1191,7 +1191,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                     height: "18px",
                     background: "hsl(25, 95%, 53%)",
                     borderRadius: "50%",
-                    border: "2px solid #1e293b",
+                    border: "2px solid white",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
