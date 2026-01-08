@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { PanelLeft, ClipboardList, Clock3, CheckCircle2, LayoutDashboard, ChevronLeft, ChevronRight } from "lucide-react";
+import { PanelLeft, ClipboardList, Clock3, CheckCircle2, LayoutDashboard, ChevronLeft, ChevronRight, Bell } from "lucide-react";
 import helpdeskLogo from "../assets/helpdesk-logo.png";
 
 interface Notification {
@@ -814,7 +814,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             alignItems: "center",
             gap: "12px",
             padding: "12px 0",
-            marginBottom: "0px",
+            marginBottom: "12px",
             borderBottom: "1px solid rgba(255,255,255,0.1)"
           }}>
             <div style={{
@@ -875,7 +875,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             borderRadius: "8px",
             cursor: "pointer",
             transition: "background 0.2s",
-            marginBottom: "0px"
+            marginBottom: "8px"
           }}
         >
           <div style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -896,7 +896,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             borderRadius: "8px",
             cursor: "pointer",
             transition: "background 0.2s",
-            marginBottom: "0px"
+            marginBottom: "8px"
           }}
         >
           <div style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -918,7 +918,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             borderRadius: "8px",
             cursor: "pointer",
             transition: "background 0.2s",
-            marginBottom: "0px"
+            marginBottom: "8px"
           }}
         >
           <div style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -939,7 +939,8 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             background: activeSection === "tickets-rejetes" ? "rgba(255,255,255,0.1)" : "transparent", 
             borderRadius: "8px",
             cursor: "pointer",
-            transition: "background 0.2s"
+            transition: "background 0.2s",
+            marginBottom: "8px"
           }}
         >
           <div style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -973,86 +974,105 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
           </div>
         </div>
 
-        {/* Bouton Déconnexion */}
-        <div
-          onClick={handleLogout}
-          style={{
-            marginTop: "auto",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "10px 12px",
-            borderRadius: "8px",
-            cursor: "pointer",
-            color: "white",
-            transition: "background 0.2s",
-          }}
-        >
+        {/* Section Notifications + Déconnexion en bas */}
+        <div style={{ marginTop: "auto" }}>
+          {/* Bouton Notifications */}
           <div
+            onClick={() => setActiveSection("notifications")}
             style={{
-              width: "20px",
-              height: "20px",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
+              gap: "10px",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              cursor: "pointer",
+              color: "white",
+              transition: "background 0.2s",
+              position: "relative"
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <polyline
-                points="16 17 21 12 16 7"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <line
-                x1="21"
-                y1="12"
-                x2="9"
-                y2="12"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <div
+              style={{
+                width: "20px",
+                height: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Bell size={20} color="rgba(180, 180, 180, 0.7)" />
+            </div>
+            <div style={{ fontSize: "14px", color: "white", flex: 1 }}>Notifications</div>
+            {unreadCount > 0 && (
+              <div style={{
+                minWidth: "20px",
+                height: "20px",
+                borderRadius: "50%",
+                background: "hsl(25, 95%, 53%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "white",
+                padding: "0 6px"
+              }}>
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: "14px", color: "white" }}>Déconnexion</div>
-        </div>
 
-        {/* Bottom user block in sidebar */}
-        <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              background: "#3b82f6",
+          {/* Bouton Déconnexion */}
+          <div
+            onClick={handleLogout}
+            style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
+              gap: "10px",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              cursor: "pointer",
               color: "white",
-              fontSize: "14px",
-              fontWeight: 600
-            }}>
-              {(userInfo?.full_name || "Utilisateur").charAt(0).toUpperCase()}
+              transition: "background 0.2s",
+            }}
+          >
+            <div
+              style={{
+                width: "20px",
+                height: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <polyline
+                  points="16 17 21 12 16 7"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <line
+                  x1="21"
+                  y1="12"
+                  x2="9"
+                  y2="12"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </div>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ color: "white", fontSize: "14px" }}>
-                {userInfo?.full_name || "Utilisateur"}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10b981" }}></div>
-                <div style={{ color: "white", fontSize: "12px" }}>En ligne</div>
-              </div>
-            </div>
+            <div style={{ fontSize: "14px", color: "white" }}>Déconnexion</div>
           </div>
         </div>
       </div>
@@ -1161,18 +1181,15 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
                   color: "white",
                   position: "relative"
                 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" fill="currentColor"/>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" fill="currentColor"/>
-                </svg>
+                <Bell size={20} color="#000000" />
                 {unreadCount > 0 && (
                   <span style={{
                     position: "absolute",
-                    top: "-5px",
-                    right: "-5px",
+                    top: "-6px",
+                    right: "-6px",
                     minWidth: "18px",
                     height: "18px",
-                    background: "#ef4444",
+                    background: "hsl(25, 95%, 53%)",
                     borderRadius: "50%",
                     border: "2px solid #1e293b",
                     display: "flex",

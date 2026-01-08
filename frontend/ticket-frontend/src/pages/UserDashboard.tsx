@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import type { FormEvent } from "react";
-import { PanelLeft, AlertCircle, Clock, CheckCircle, LayoutDashboard, PlusCircle, Ticket, ChevronLeft, ChevronRight } from "lucide-react";
+import { PanelLeft, AlertCircle, Clock, CheckCircle, LayoutDashboard, PlusCircle, Ticket, ChevronLeft, ChevronRight, Bell } from "lucide-react";
 import helpdeskLogo from "../assets/helpdesk-logo.png";
 
 interface UserDashboardProps {
@@ -1012,7 +1012,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             alignItems: "center",
             gap: "12px",
             padding: "12px 0",
-            marginBottom: "0px",
+            marginBottom: "12px",
             borderBottom: "1px solid rgba(255,255,255,0.1)"
           }}>
             <div style={{
@@ -1072,7 +1072,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             cursor: "pointer",
             background: activeSection === "dashboard" ? "hsl(25, 95%, 53%)" : "transparent",
             borderRadius: "8px",
-            marginBottom: "0px"
+            marginBottom: "8px"
           }}
         >
           <div style={{ 
@@ -1085,7 +1085,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             <LayoutDashboard size={20} color={activeSection === "dashboard" ? "white" : "rgba(180, 180, 180, 0.7)"} />
           </div>
           <div style={{ 
-            fontSize: "16px",
+            fontSize: "15px",
             fontFamily: "'Inter', system-ui, sans-serif",
             fontWeight: "500",
             color: "white"
@@ -1100,7 +1100,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             gap: "12px", 
             padding: "10px", 
             cursor: "pointer",
-            marginBottom: "0px"
+            marginBottom: "8px"
           }}
         >
           <div style={{ 
@@ -1113,7 +1113,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             <PlusCircle size={20} color="rgba(180, 180, 180, 0.7)" />
           </div>
           <div style={{ 
-            fontSize: "16px",
+            fontSize: "15px",
             fontFamily: "'Inter', system-ui, sans-serif",
             fontWeight: "500",
             color: "white"
@@ -1134,7 +1134,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             cursor: "pointer",
             background: activeSection === "tickets" ? "hsl(25, 95%, 53%)" : "transparent",
             borderRadius: "8px",
-            marginBottom: "0px"
+            marginBottom: "8px"
           }}
         >
           <div style={{ 
@@ -1147,7 +1147,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             <Ticket size={20} color={activeSection === "tickets" ? "white" : "rgba(180, 180, 180, 0.7)"} />
           </div>
           <div style={{ 
-            fontSize: "16px",
+            fontSize: "15px",
             fontFamily: "'Inter', system-ui, sans-serif",
             fontWeight: "500",
             color: "white"
@@ -1177,7 +1177,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
             </svg>
           </div>
           <div style={{ 
-            fontSize: "16px",
+            fontSize: "15px",
             fontFamily: "'Inter', system-ui, sans-serif",
             fontWeight: "500",
             color: "white"
@@ -1185,6 +1185,51 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
         </div>
         {/* Section Déconnexion + utilisateur en bas */}
         <div style={{ marginTop: "auto" }}>
+          {/* Bouton Notifications */}
+          <div 
+            onClick={() => setActiveSection("notifications")}
+            style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              gap: "12px", 
+              padding: "12px", 
+              cursor: "pointer",
+              position: "relative"
+            }}
+          >
+            <div style={{ 
+              width: "20px", 
+              height: "20px", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center"
+            }}>
+              <Bell size={20} color="rgba(180, 180, 180, 0.7)" />
+            </div>
+            <div style={{ 
+              fontSize: "14px", 
+              color: "white",
+              flex: 1
+            }}>Notifications</div>
+            {unreadCount > 0 && (
+              <div style={{
+                minWidth: "20px",
+                height: "20px",
+                borderRadius: "50%",
+                background: "hsl(25, 95%, 53%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "white",
+                padding: "0 6px"
+              }}>
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </div>
+            )}
+          </div>
+
           {/* Bouton Déconnexion */}
           <div 
             onClick={handleLogout}
@@ -1214,35 +1259,6 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
               color: "white"
             }}>Déconnexion</div>
           </div>
-          
-          {/* Bottom user block in sidebar */}
-          <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{
-                width: "32px",
-                height: "32px",
-                borderRadius: "50%",
-                background: "#3b82f6",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                fontSize: "14px",
-                fontWeight: 600
-              }}>
-                {(userInfo?.full_name || "Utilisateur").charAt(0).toUpperCase()}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                <div style={{ color: "white", fontSize: "14px" }}>
-                  {userInfo?.full_name || "Utilisateur"}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10b981" }}></div>
-                  <div style={{ color: "white", fontSize: "12px" }}>En ligne</div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1261,7 +1277,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
           top: 0,
           left: sidebarCollapsed ? "80px" : "250px",
           right: 0,
-          background: "hsl(226, 34%, 15%)",
+          background: "hsl(0, 0%, 100%)",
           padding: "16px 30px",
           display: "flex",
           alignItems: "center",
@@ -1270,8 +1286,23 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
           zIndex: 99,
           transition: "left 0.3s ease"
         }}>
-          {/* Left side - Empty to maintain top bar size */}
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {/* Left side - Title */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ 
+              fontSize: "20px", 
+              fontWeight: "700", 
+              color: "#111827",
+              lineHeight: "1.2"
+            }}>
+              Tableau de bord
+            </div>
+            <div style={{ 
+              fontSize: "14px", 
+              color: "#6b7280",
+              lineHeight: "1.2"
+            }}>
+              Vue d'ensemble de votre activité
+            </div>
           </div>
 
           {/* Right side - Icons */}
@@ -1283,63 +1314,12 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                 fontSize: "14px", 
                 fontWeight: "400",
                 fontFamily: "system-ui, -apple-system, sans-serif",
-                marginRight: "8px"
+                marginRight: "16px"
               }}>
                 Bienvenue Dans Votre Espace Utilisateur, {userInfo.full_name.toUpperCase()}
               </span>
             )}
             
-            {/* Plus Icon - Trudesk style */}
-            <div
-              onClick={() => setShowCreateModal(true)}
-              style={{
-                width: "40px",
-                height: "40px",
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center",
-            color: "white",
-            cursor: "pointer", 
-                borderRadius: "4px",
-                transition: "background 0.2s ease"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,0.1)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </div>
-            
-            {/* Separator */}
-            <div style={{ width: "1px", height: "24px", background: "rgba(255,255,255,0.2)", margin: "0 8px" }}></div>
-
-            {/* Chat Icon - DSI style */}
-            <div
-              style={{
-                width: "24px",
-                height: "24px",
-                display: "flex", 
-                alignItems: "center", 
-                justifyContent: "center",
-                color: "white",
-                cursor: "pointer"
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="currentColor"/>
-                <path d="M19 13a2 2 0 0 1-2 2H5l-4 4V3a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="currentColor" opacity="0.6" transform="translate(2, 2)"/>
-              </svg>
-            </div>
-
-            {/* Separator */}
-            <div style={{ width: "1px", height: "24px", background: "rgba(255,255,255,0.2)", margin: "0 8px" }}></div>
-
             {/* Bell Icon with Notification - DSI style */}
             <div 
               onClick={() => setShowNotifications(!showNotifications)}
@@ -1354,20 +1334,17 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                 position: "relative"
               }}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" fill="currentColor"/>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" fill="currentColor"/>
-              </svg>
+              <Bell size={20} color="#000000" />
               {unreadCount > 0 && (
                 <span style={{
                   position: "absolute",
-                  top: "-5px",
-                  right: "-5px",
+                  top: "-6px",
+                  right: "-6px",
                   minWidth: "18px",
                   height: "18px",
-                  background: "#ef4444",
+                  background: "hsl(25, 95%, 53%)",
                   borderRadius: "50%",
-                  border: "2px solid #1e293b",
+                  border: "2px solid white",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1396,13 +1373,13 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
               background: "transparent", 
               borderRadius: "0", 
               boxShadow: "none", 
-              padding: "20px",
+              padding: "0",
               marginBottom: "30px"
             }}>
             {/* Header retiré */}
 
             {/* Message d'accueil */}
-            <div style={{ marginBottom: "30px" }}>
+            <div style={{ marginTop: "24px", marginBottom: "30px" }}>
               <div style={{ fontSize: "24px", fontWeight: "700", color: "#111827", marginBottom: "8px" }}>
                 Bonjour {userInfo?.full_name ? userInfo.full_name.split(' ')[0] : 'Jean'} 👋
               </div>
