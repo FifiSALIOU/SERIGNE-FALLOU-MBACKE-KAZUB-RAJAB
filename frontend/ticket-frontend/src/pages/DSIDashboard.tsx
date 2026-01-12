@@ -509,6 +509,13 @@ function DSIDashboard({ token }: DSIDashboardProps) {
     }
   }, [searchParams, allTickets]);
   
+  // Définir automatiquement "statistiques" comme rapport sélectionné quand on arrive sur la page reports
+  useEffect(() => {
+    if (location.pathname === "/dashboard/dsi/reports" && !selectedReport) {
+      setSelectedReport("statistiques");
+    }
+  }, [location.pathname]);
+  
   const [newUser, setNewUser] = useState({
     full_name: "",
     email: "",
@@ -2576,6 +2583,79 @@ function DSIDashboard({ token }: DSIDashboardProps) {
       return {
         date: date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
         satisfaction: Number(avgSatisfaction.toFixed(1))
+      };
+    });
+  };
+
+  // Fonction pour préparer les données du graphique "Tickets cette semaine"
+  const prepareWeeklyTicketsData = () => {
+    const days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    const dayOfWeek = today.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Lundi = 1, Dimanche = 0
+    startOfWeek.setDate(today.getDate() + diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    return days.map((day, index) => {
+      const currentDay = new Date(startOfWeek);
+      currentDay.setDate(startOfWeek.getDate() + index);
+      const nextDay = new Date(currentDay);
+      nextDay.setDate(currentDay.getDate() + 1);
+
+      // Tickets créés ce jour
+      const createdTickets = allTickets.filter(t => {
+        if (!t.created_at) return false;
+        const ticketDate = new Date(t.created_at);
+        return ticketDate >= currentDay && ticketDate < nextDay;
+      });
+
+      // Tickets résolus ce jour
+      const resolvedTickets = allTickets.filter(t => {
+        if (!t.resolved_at) return false;
+        const ticketDate = new Date(t.resolved_at);
+        return ticketDate >= currentDay && ticketDate < nextDay;
+      });
+
+      return {
+        jour: day,
+        Créés: createdTickets.length,
+        Résolus: resolvedTickets.length
+      };
+    });
+  };
+
+  // Fonction pour préparer les données du graphique "Évolution mensuelle par type"
+  const prepareMonthlyEvolutionData = () => {
+    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin'];
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+
+    return months.map((month, index) => {
+      const monthIndex = index; // Janvier = 0, Février = 1, etc.
+      const startOfMonth = new Date(currentYear, monthIndex, 1);
+      const endOfMonth = new Date(currentYear, monthIndex + 1, 0, 23, 59, 59, 999);
+
+      // Tickets Matériel ce mois
+      const materielTickets = allTickets.filter(t => {
+        if (!t.created_at) return false;
+        const ticketDate = new Date(t.created_at);
+        return ticketDate >= startOfMonth && ticketDate <= endOfMonth && 
+               (t.type === "Matériel" || t.category === "Matériel");
+      });
+
+      // Tickets Applicatif ce mois
+      const applicatifTickets = allTickets.filter(t => {
+        if (!t.created_at) return false;
+        const ticketDate = new Date(t.created_at);
+        return ticketDate >= startOfMonth && ticketDate <= endOfMonth && 
+               (t.type === "Applicatif" || t.category === "Applicatif");
+      });
+
+      return {
+        mois: month,
+        Matériel: materielTickets.length,
+        Applicatif: applicatifTickets.length
       };
     });
   };
@@ -4658,127 +4738,25 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
             <div style={{ flex: 1 }}>Utilisateurs</div>
           </div>
         )}
-        <div style={{ position: "relative" }}>
-          <div 
-            onClick={() => setShowReportsDropdown(!showReportsDropdown)}
-            style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: "12px", 
-              padding: "12px", 
-              background: activeSection === "reports" ? "hsl(25, 95%, 53%)" : "transparent",
-              borderRadius: "8px",
-              cursor: "pointer"
-            }}
-          >
-            <div style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <BarChart3 size={20} color={activeSection === "reports" ? "white" : "rgba(180, 180, 180, 0.7)"} strokeWidth={2.5} />
-            </div>
-            <div style={{ flex: 1 }}>Statistiques</div>
-            <div style={{ width: "16px", height: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeSection === "reports" ? "white" : "rgba(180, 180, 180, 0.7)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                {showReportsDropdown ? (
-                  <polyline points="6 9 12 15 18 9" />
-                ) : (
-                  <polyline points="9 18 15 12 9 6" />
-                )}
-              </svg>
-            </div>
+        <div 
+          onClick={() => {
+            setSelectedReport("statistiques");
+            navigate("/dashboard/dsi/reports");
+          }}
+          style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "12px", 
+            padding: "12px", 
+            background: activeSection === "reports" ? "hsl(25, 95%, 53%)" : "transparent",
+            borderRadius: "8px",
+            cursor: "pointer"
+          }}
+        >
+          <div style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <BarChart3 size={20} color={activeSection === "reports" ? "white" : "rgba(180, 180, 180, 0.7)"} strokeWidth={2.5} />
           </div>
-          {showReportsDropdown && (
-            <div style={{ 
-              marginLeft: "48px", 
-              marginTop: "8px", 
-              display: "flex", 
-              flexDirection: "column", 
-              gap: "4px" 
-            }}>
-              <div 
-                onClick={() => {
-                  setSelectedReport("statistiques");
-                  setActiveSection("reports");
-                }}
-                style={{ 
-                  padding: "8px 12px", 
-                  borderRadius: "4px", 
-                  cursor: "pointer",
-                  background: selectedReport === "statistiques" ? "hsl(25, 95%, 53%)" : "transparent"
-                }}
-              >
-                Statistiques générales
-              </div>
-              <div 
-                onClick={() => {
-                  setSelectedReport("metriques");
-                  navigate("/dashboard/dsi/reports");
-                }}
-                style={{ 
-                  padding: "8px 12px", 
-                  borderRadius: "4px", 
-                  cursor: "pointer",
-                  background: selectedReport === "metriques" ? "hsl(25, 95%, 53%)" : "transparent"
-                }}
-              >
-                Métriques de performance
-              </div>
-              <div 
-                onClick={() => {
-                  setSelectedReport("agence");
-                  navigate("/dashboard/dsi/reports");
-                }}
-                style={{ 
-                  padding: "8px 12px", 
-                  borderRadius: "4px", 
-                  cursor: "pointer",
-                  background: selectedReport === "agence" ? "hsl(25, 95%, 53%)" : "transparent"
-                }}
-              >
-                Analyses par agence
-              </div>
-              <div 
-                onClick={() => {
-                  setSelectedReport("technicien");
-                  navigate("/dashboard/dsi/reports");
-                }}
-                style={{ 
-                  padding: "8px 12px", 
-                  borderRadius: "4px", 
-                  cursor: "pointer",
-                  background: selectedReport === "technicien" ? "hsl(25, 95%, 53%)" : "transparent"
-                }}
-              >
-                Analyses par technicien
-              </div>
-              <div 
-                onClick={() => {
-                  setSelectedReport("evolutions");
-                  navigate("/dashboard/dsi/reports");
-                }}
-                style={{ 
-                  padding: "8px 12px", 
-                  borderRadius: "4px", 
-                  cursor: "pointer",
-                  background: selectedReport === "evolutions" ? "hsl(25, 95%, 53%)" : "transparent"
-                }}
-              >
-                Évolutions dans le temps
-              </div>
-              <div 
-                onClick={() => {
-                  setSelectedReport("recurrents");
-                  navigate("/dashboard/dsi/reports");
-                }}
-                style={{ 
-                  padding: "8px 12px", 
-                  borderRadius: "4px", 
-                  cursor: "pointer",
-                  background: selectedReport === "recurrents" ? "hsl(25, 95%, 53%)" : "transparent"
-                }}
-              >
-                Problèmes récurrents
-              </div>
-            </div>
-          )}
+          <div style={{ flex: 1 }}>Statistiques</div>
         </div>
         {userRole === "Admin" && (
           <div 
@@ -7516,191 +7494,114 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
               )}
 
               {selectedReport === "statistiques" && (
-                <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "20px", marginBottom: "24px" }}>
-                    <div style={{ padding: "16px", background: "#f8f9fa", borderRadius: "8px" }}>
-                      <div style={{ fontSize: "32px", fontWeight: "bold", color: "#007bff", marginBottom: "8px" }}>{allTickets.length}</div>
-                      <div style={{ color: "#666" }}>Nombre total de tickets</div>
-                    </div>
-                    <div style={{ padding: "16px", background: "#f8f9fa", borderRadius: "8px" }}>
-                      <div style={{ fontSize: "32px", fontWeight: "bold", color: "#28a745", marginBottom: "8px" }}>{resolvedCount + closedTickets.length}</div>
-                      <div style={{ color: "#666" }}>Tickets résolus/clôturés</div>
-                    </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                  {/* Graphique 1: Tickets cette semaine */}
+                  <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+                    <h3 style={{ marginBottom: "16px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                      Tickets cette semaine
+                    </h3>
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart
+                        data={prepareWeeklyTicketsData()}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        barCategoryGap="20%"
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                        <XAxis 
+                          dataKey="jour" 
+                          stroke="#6b7280" 
+                          style={{ fontSize: "12px" }}
+                        />
+                        <YAxis 
+                          stroke="#6b7280" 
+                          style={{ fontSize: "12px" }}
+                          domain={[0, 16]}
+                          ticks={[0, 4, 8, 12, 16]}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: "white", 
+                            border: "1px solid #e5e7eb", 
+                            borderRadius: "8px",
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+                          }}
+                        />
+                        <Legend />
+                        <Bar 
+                          dataKey="Créés" 
+                          fill="#FF9500"
+                          radius={[4, 4, 0, 0]}
+                          barSize={30}
+                        />
+                        <Bar 
+                          dataKey="Résolus" 
+                          fill="#22C55E"
+                          radius={[4, 4, 0, 0]}
+                          barSize={30}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div style={{ marginBottom: "24px" }}>
-                    <h4 style={{ marginBottom: "12px", fontSize: "18px", fontWeight: "600", color: "#333" }}>Répartition par statut</h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", alignItems: "start" }}>
-                      {/* Tableau */}
-                      <div>
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                          <thead>
-                            <tr style={{ background: "#f8f9fa" }}>
-                              <th style={{ padding: "12px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Statut</th>
-                              <th style={{ padding: "12px", textAlign: "right", borderBottom: "1px solid #dee2e6" }}>Nombre</th>
-                              <th style={{ padding: "12px", textAlign: "right", borderBottom: "1px solid #dee2e6" }}>Pourcentage</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td style={{ padding: "12px" }}>En attente</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{pendingCount}</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{allTickets.length > 0 ? ((pendingCount / allTickets.length) * 100).toFixed(1) : 0}%</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: "12px" }}>Assignés/En cours</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{assignedCount}</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{allTickets.length > 0 ? ((assignedCount / allTickets.length) * 100).toFixed(1) : 0}%</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: "12px" }}>Résolus</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{resolvedCount}</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{allTickets.length > 0 ? ((resolvedCount / allTickets.length) * 100).toFixed(1) : 0}%</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: "12px" }}>Clôturés</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{closedTickets.length}</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{allTickets.length > 0 ? ((closedTickets.length / allTickets.length) * 100).toFixed(1) : 0}%</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: "12px" }}>Rejetés</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{rejectedTickets.length}</td>
-                              <td style={{ padding: "12px", textAlign: "right" }}>{allTickets.length > 0 ? ((rejectedTickets.length / allTickets.length) * 100).toFixed(1) : 0}%</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                      {/* Diagramme circulaire */}
-                      <div>
-                        {(() => {
-                          const statusData = [
-                            { name: "En attente", value: pendingCount, color: "#F4A460" }, // Sable/Beige (même type que Haute)
-                            { name: "Assignés/En cours", value: assignedCount, color: "#87CEEB" }, // Bleu ciel (même type que Moyenne)
-                            { name: "Résolus", value: resolvedCount, color: "#98D8C8" }, // Vert menthe (même type que Faible)
-                            { name: "Clôturés", value: closedTickets.length, color: "#FFE5B4" }, // Jaune clair (même type)
-                            { name: "Rejetés", value: rejectedTickets.length, color: "#E8B4B8" } // Rose doux (même type que Critique)
-                          ].filter(item => item.value > 0); // Ne garder que les statuts avec des tickets
-                          
-                          return statusData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={300}>
-                              <PieChart>
-                                <Pie
-                                  data={statusData}
-                                  cx="50%"
-                                  cy="50%"
-                                  labelLine={false}
-                                  label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : ""}
-                                  outerRadius={100}
-                                  fill="#8884d8"
-                                  dataKey="value"
-                                >
-                                  {statusData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                  ))}
-                                </Pie>
-                                <Tooltip 
-                                  formatter={(value: number) => [`${value} tickets`, "Nombre"]}
-                                />
-                                <Legend 
-                                  verticalAlign="bottom" 
-                                  height={36}
-                                  formatter={(value) => value}
-                                />
-                              </PieChart>
-                            </ResponsiveContainer>
-                          ) : (
-                            <div style={{ padding: "40px", textAlign: "center", color: "#999" }}>
-                              Aucune donnée à afficher
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ marginBottom: "24px" }}>
-                    <h4 style={{ marginBottom: "12px", fontSize: "18px", fontWeight: "600", color: "#333" }}>Répartition par priorité</h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", alignItems: "start" }}>
-                      {/* Tableau */}
-                      <div>
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                          <thead>
-                            <tr style={{ background: "#f8f9fa" }}>
-                              <th style={{ padding: "12px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Priorité</th>
-                              <th style={{ padding: "12px", textAlign: "right", borderBottom: "1px solid #dee2e6" }}>Nombre</th>
-                              <th style={{ padding: "12px", textAlign: "right", borderBottom: "1px solid #dee2e6" }}>Pourcentage</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {["critique", "haute", "moyenne", "faible"].map((priority) => {
-                              const count = allTickets.filter((t) => t.priority === priority).length;
-                              return (
-                                <tr key={priority}>
-                                  <td style={{ padding: "12px", textTransform: "capitalize" }}>{priority}</td>
-                                  <td style={{ padding: "12px", textAlign: "right" }}>{count}</td>
-                                  <td style={{ padding: "12px", textAlign: "right" }}>{allTickets.length > 0 ? ((count / allTickets.length) * 100).toFixed(1) : 0}%</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      {/* Graphique en barres horizontales */}
-                      <div>
-                        {(() => {
-                          const priorityData = [
-                            { name: "Critique", value: allTickets.filter((t) => t.priority === "critique").length, color: "#E8B4B8" }, // Rose doux
-                            { name: "Haute", value: allTickets.filter((t) => t.priority === "haute").length, color: "#F4A460" }, // Sable/Beige
-                            { name: "Moyenne", value: allTickets.filter((t) => t.priority === "moyenne").length, color: "#0DADDB" }, // Bleu cyan
-                            { name: "Faible", value: allTickets.filter((t) => t.priority === "faible").length, color: "#98D8C8" } // Vert menthe
-                          ].filter(item => item.value > 0); // Ne garder que les priorités avec des tickets
-                          
-                          return priorityData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={300}>
-                              <BarChart
-                                layout="vertical"
-                                data={priorityData}
-                                margin={{ top: 20, right: 30, left: 80, bottom: 5 }}
-                              >
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                                <XAxis type="number" stroke="#6b7280" style={{ fontSize: "12px" }} />
-                                <YAxis dataKey="name" type="category" stroke="#6b7280" style={{ fontSize: "12px" }} />
-                                <Tooltip 
-                                  formatter={(value: number) => [`${value} tickets`, "Nombre"]}
-                                  contentStyle={{ 
-                                    backgroundColor: "white", 
-                                    border: "1px solid #e5e7eb", 
-                                    borderRadius: "8px",
-                                    boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
-                                  }}
-                                />
-                                <Bar dataKey="value" radius={[0, 8, 8, 0]}>
-                                  {priorityData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                  ))}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          ) : (
-                            <div style={{ padding: "40px", textAlign: "center", color: "#999" }}>
-                              Aucune donnée à afficher
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
-                    <button 
-                      onClick={() => exportToPDF()}
-                      style={{ padding: "10px 20px", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                    >
-                      Exporter PDF
-                    </button>
-                    <button 
-                      onClick={() => exportToExcel()}
-                      style={{ padding: "10px 20px", backgroundColor: "#28a745", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                    >
-                      Exporter Excel
-                    </button>
+
+                  {/* Graphique 2: Évolution mensuelle par type */}
+                  <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+                    <h3 style={{ marginBottom: "16px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                      Évolution mensuelle par type
+                    </h3>
+                    <ResponsiveContainer width="100%" height={320}>
+                      <AreaChart
+                        data={prepareMonthlyEvolutionData()}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorMateriel" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#FF9500" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#FF9500" stopOpacity={0.05}/>
+                          </linearGradient>
+                          <linearGradient id="colorApplicatif" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#475569" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#475569" stopOpacity={0.05}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                        <XAxis 
+                          dataKey="mois" 
+                          stroke="#6b7280" 
+                          style={{ fontSize: "12px" }}
+                        />
+                        <YAxis 
+                          stroke="#6b7280" 
+                          style={{ fontSize: "12px" }}
+                          domain={[0, 80]}
+                          ticks={[0, 20, 40, 60, 80]}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: "white", 
+                            border: "1px solid #e5e7eb", 
+                            borderRadius: "8px",
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+                          }}
+                        />
+                        <Legend />
+                        <Area 
+                          type="monotone" 
+                          dataKey="Matériel" 
+                          stroke="#FF9500" 
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#colorMateriel)" 
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="Applicatif" 
+                          stroke="#475569" 
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#colorApplicatif)" 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               )}
