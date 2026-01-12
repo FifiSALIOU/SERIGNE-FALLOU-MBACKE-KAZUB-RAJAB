@@ -5065,7 +5065,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
               color: "#111827",
               fontFamily: "system-ui, -apple-system, sans-serif"
             }}>
-              {activeSection === "tickets" ? "Tickets" : activeSection === "technicians" ? "Équipe" : "Tableau de bord"}
+              {activeSection === "tickets" ? "Tickets" : activeSection === "technicians" ? "Équipe" : activeSection === "reports" ? "Statistiques générales" : "Tableau de bord"}
             </div>
             <div style={{ 
               fontSize: "13px", 
@@ -5073,7 +5073,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
               color: "#6b7280",
               fontFamily: "system-ui, -apple-system, sans-serif"
             }}>
-              {activeSection === "tickets" ? "Gérez tous vos tickets" : activeSection === "technicians" ? "Gestion des membres de l'équipe DSI et des techniciens" : "Vue d'ensemble de votre activité"}
+              {activeSection === "tickets" ? "Gérez tous vos tickets" : activeSection === "technicians" ? "Gestion des membres de l'équipe DSI et des techniciens" : activeSection === "reports" ? "Vue d'ensemble des tickets et de l'activité du support" : "Vue d'ensemble de votre activité"}
             </div>
           </div>
           
@@ -7415,53 +7415,48 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
 
           {activeSection === "reports" && (
             <>
-              <div style={{ marginBottom: "24px" }}>
-                <h2 style={{ marginBottom: "8px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
-                  {selectedReport === "statistiques" 
-                    ? "Statistiques générales" 
-                    : selectedReport === "metriques" 
-                    ? "Métriques de performance" 
-                    : selectedReport === "agence"
-                    ? "Analyses par agence"
-                    : selectedReport === "technicien"
-                    ? "Analyses par technicien"
-                    : selectedReport === "evolutions"
-                    ? "Évolutions dans le temps"
-                    : selectedReport === "recurrents"
-                    ? "Problèmes récurrents"
-                    : "Rapports et Métriques"}
-                </h2>
-                {selectedReport === "statistiques" && (
-                  <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
-                    Vue d'ensemble des tickets et de l'activité du support
-                  </p>
-                )}
-                {selectedReport === "metriques" && (
-                  <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
-                    Indicateurs clés de la qualité et de l'efficacité du support technique
-                  </p>
-                )}
-                {selectedReport === "agence" && (
-                  <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
-                    Performance et répartition des tickets par agence
-                  </p>
-                )}
-                {selectedReport === "technicien" && (
-                  <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
-                    Analyse détaillée de la performance individuelle de chaque technicien
-                  </p>
-                )}
-                {selectedReport === "evolutions" && (
-                  <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
-                    Analyse des tendances et des évolutions temporelles des tickets et de la performance
-                  </p>
-                )}
-                {selectedReport === "recurrents" && (
-                  <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
-                    Identification et analyse des problèmes qui reviennent fréquemment pour améliorer la prévention
-                  </p>
-                )}
-              </div>
+              {selectedReport !== "statistiques" && (
+                <div style={{ marginBottom: "24px" }}>
+                  <h2 style={{ marginBottom: "8px", fontSize: "28px", fontWeight: "600", color: "#333" }}>
+                    {selectedReport === "metriques" 
+                      ? "Métriques de performance" 
+                      : selectedReport === "agence"
+                      ? "Analyses par agence"
+                      : selectedReport === "technicien"
+                      ? "Analyses par technicien"
+                      : selectedReport === "evolutions"
+                      ? "Évolutions dans le temps"
+                      : selectedReport === "recurrents"
+                      ? "Problèmes récurrents"
+                      : "Rapports et Métriques"}
+                  </h2>
+                  {selectedReport === "metriques" && (
+                    <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
+                      Indicateurs clés de la qualité et de l'efficacité du support technique
+                    </p>
+                  )}
+                  {selectedReport === "agence" && (
+                    <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
+                      Performance et répartition des tickets par agence
+                    </p>
+                  )}
+                  {selectedReport === "technicien" && (
+                    <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
+                      Analyse détaillée de la performance individuelle de chaque technicien
+                    </p>
+                  )}
+                  {selectedReport === "evolutions" && (
+                    <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
+                      Analyse des tendances et des évolutions temporelles des tickets et de la performance
+                    </p>
+                  )}
+                  {selectedReport === "recurrents" && (
+                    <p style={{ margin: "0", fontSize: "16px", color: "#6b7280", fontWeight: "400" }}>
+                      Identification et analyse des problèmes qui reviennent fréquemment pour améliorer la prévention
+                    </p>
+                  )}
+                </div>
+              )}
               
               {!selectedReport && !showGenerateReport && (
                 <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -7496,16 +7491,16 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
               )}
 
               {selectedReport === "statistiques" && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginTop: "32px" }}>
                   {/* Graphique 1: Tickets cette semaine */}
-                  <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-                    <h3 style={{ marginBottom: "16px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                  <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", display: "flex", flexDirection: "column" }}>
+                    <h3 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: "600", color: "#333" }}>
                       Tickets cette semaine
                     </h3>
-                    <ResponsiveContainer width="100%" height={320}>
+                    <ResponsiveContainer width="100%" height={320} style={{ flex: 1 }}>
                       <BarChart
                         data={prepareWeeklyTicketsData()}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
                         barCategoryGap="20%"
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
@@ -7513,6 +7508,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                           dataKey="jour" 
                           stroke="#6b7280" 
                           style={{ fontSize: "12px" }}
+                          height={60}
                         />
                         <YAxis 
                           stroke="#6b7280" 
@@ -7546,14 +7542,14 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                   </div>
 
                   {/* Graphique 2: Évolution mensuelle par type */}
-                  <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-                    <h3 style={{ marginBottom: "16px", fontSize: "20px", fontWeight: "600", color: "#333" }}>
+                  <div style={{ background: "white", padding: "24px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", display: "flex", flexDirection: "column" }}>
+                    <h3 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: "600", color: "#333" }}>
                       Évolution mensuelle par type
                     </h3>
-                    <ResponsiveContainer width="100%" height={320}>
+                    <ResponsiveContainer width="100%" height={320} style={{ flex: 1 }}>
                       <AreaChart
                         data={prepareMonthlyEvolutionData()}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
                       >
                         <defs>
                           <linearGradient id="colorMateriel" x1="0" y1="0" x2="0" y2="1">
