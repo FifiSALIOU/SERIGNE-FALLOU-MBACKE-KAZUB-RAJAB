@@ -2627,7 +2627,7 @@ function DSIDashboard({ token }: DSIDashboardProps) {
 
   // Fonction pour préparer les données du graphique "Évolution mensuelle par type"
   const prepareMonthlyEvolutionData = () => {
-    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin'];
+    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
 
@@ -2641,7 +2641,8 @@ function DSIDashboard({ token }: DSIDashboardProps) {
         if (!t.created_at) return false;
         const ticketDate = new Date(t.created_at);
         return ticketDate >= startOfMonth && ticketDate <= endOfMonth && 
-               (t.type === "Matériel" || t.category === "Matériel");
+               (t.type === "materiel" || t.type?.toLowerCase() === "materiel" || 
+                t.category?.toLowerCase().includes("materiel"));
       });
 
       // Tickets Applicatif ce mois
@@ -2649,7 +2650,8 @@ function DSIDashboard({ token }: DSIDashboardProps) {
         if (!t.created_at) return false;
         const ticketDate = new Date(t.created_at);
         return ticketDate >= startOfMonth && ticketDate <= endOfMonth && 
-               (t.type === "Applicatif" || t.category === "Applicatif");
+               (t.type === "applicatif" || t.type?.toLowerCase() === "applicatif" || 
+                t.category?.toLowerCase().includes("applicatif"));
       });
 
       return {
@@ -7551,7 +7553,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                     <ResponsiveContainer width="100%" height={320}>
                       <AreaChart
                         data={prepareMonthlyEvolutionData()}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
                       >
                         <defs>
                           <linearGradient id="colorMateriel" x1="0" y1="0" x2="0" y2="1">
@@ -7567,7 +7569,10 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                         <XAxis 
                           dataKey="mois" 
                           stroke="#6b7280" 
-                          style={{ fontSize: "12px" }}
+                          style={{ fontSize: "11px" }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
                         />
                         <YAxis 
                           stroke="#6b7280" 
