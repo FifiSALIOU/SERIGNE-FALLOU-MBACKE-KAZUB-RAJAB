@@ -2323,7 +2323,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                       border: "1px solid #e5e7eb",
                       borderRadius: "8px",
                       fontSize: "14px",
-                      background: "white",
+                      background: "transparent",
                       outline: "none",
                       color: "#1f2937"
                     }}
@@ -2343,7 +2343,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                       border: "1px solid #d1d5db", 
                       borderRadius: "8px",
                       fontSize: "14px",
-                      background: "white",
+                      background: "transparent",
                       minWidth: "160px"
                     }}
                   >
@@ -2363,7 +2363,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                       border: "1px solid #d1d5db", 
                       borderRadius: "8px",
                       fontSize: "14px",
-                      background: "white",
+                      background: "transparent",
                       minWidth: "140px"
                     }}
                   >
@@ -2379,7 +2379,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                       border: "1px solid #d1d5db", 
                       borderRadius: "8px",
                       fontSize: "14px",
-                      background: "white",
+                      background: "transparent",
                       minWidth: "140px"
                     }}
                   >
