@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Clock3, Users, CheckCircle2, ChevronRight, ChevronLeft, ChevronDown, LayoutDashboard, Bell, Search } from "lucide-react";
+import { Clock3, Users, CheckCircle2, ChevronRight, ChevronLeft, ChevronDown, LayoutDashboard, Bell, Search, Clock, Monitor, Wrench } from "lucide-react";
 import helpdeskLogo from "../assets/helpdesk-logo.png";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -154,6 +154,11 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
       default: return priority;
     }
   }
+
+  // Fonction helper pour formater le numéro de ticket en "TKT-XXX"
+  const formatTicketNumber = (number: number): string => {
+    return `TKT-${String(number).padStart(3, "0")}`;
+  };
 
   // Fonction pour charger les rapports récents
   async function loadRecentReports() {
@@ -4071,95 +4076,178 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                   .slice(0, 5);
                 
                 return (
-              <table style={{ width: "100%", borderCollapse: "collapse", background: "white", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
-        <thead>
-          <tr style={{ background: "#f8f9fa" }}>
-            <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>ID</th>
-            <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Titre</th>
-            <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Nom</th>
-            <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Agence</th>
-            <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Priorité</th>
-            <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Statut</th>
-            <th style={{ padding: "12px 16px", textAlign: "left", borderBottom: "1px solid #dee2e6" }}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {recentTickets.length === 0 ? (
-            <tr>
-              <td colSpan={7} style={{ textAlign: "center", padding: "20px", color: "#999" }}>
-                Aucun ticket
-              </td>
-            </tr>
-          ) : (
-            recentTickets.map((t) => {
-              const isDelegatedToMe = roleName === "Adjoint DSI" && delegatedTicketsByDSI.has(t.id);
-              return (
-              <tr key={t.id} data-ticket-id={t.id} style={{ borderBottom: "1px solid #eee", background: "white" }}>
-                <td style={{ padding: "12px 16px" }}>#{t.number}</td>
-                <td style={{ padding: "12px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    {t.title}
-                    {isDelegatedToMe && (
-                      <span style={{
-                        padding: "2px 6px",
-                        borderRadius: "4px",
-                        fontSize: "10px",
-                        fontWeight: "600",
-                        background: "#ffc107",
-                        color: "#856404",
-                        whiteSpace: "nowrap"
-                      }}>
-                        Délégué
-                      </span>
-                    )}
+              <div style={{ 
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+                overflow: "visible",
+              }}>
+                {recentTickets.length === 0 ? (
+                  <div style={{ 
+                    textAlign: "center", 
+                    padding: "40px", 
+                    color: "#999", 
+                    fontWeight: "500",
+                    background: "white",
+                    borderRadius: "12px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                  }}>
+                    Aucun ticket
                   </div>
-                </td>
-                <td style={{ padding: "12px 16px" }}>
-                  {t.creator ? t.creator.full_name : "N/A"}
-                </td>
-                <td style={{ padding: "12px 16px" }}>
-                  {t.creator ? (t.creator.agency || t.user_agency || "N/A") : (t.user_agency || "N/A")}
-                </td>
-                <td style={{ padding: "12px 16px" }}>
-                  <span style={{
-                    padding: "6px 12px",
-                    borderRadius: "20px",
-                    fontSize: "12px",
-                    fontWeight: "500",
-                    background: t.priority === "critique" ? "rgba(229, 62, 62, 0.1)" : t.priority === "haute" ? "rgba(245, 158, 11, 0.1)" : t.priority === "moyenne" ? "rgba(13, 173, 219, 0.1)" : t.priority === "faible" ? "#E5E7EB" : "#9e9e9e",
-                    color: t.priority === "critique" ? "#E53E3E" : t.priority === "haute" ? "#F59E0B" : t.priority === "faible" ? "#6B7280" : t.priority === "moyenne" ? "#0DADDB" : "#374151"
-                  }}>
-                    {getPriorityLabel(t.priority)}
-                  </span>
-                </td>
-                <td style={{ padding: "12px 16px" }}>
-                  <span style={{
-                    padding: t.status === "en_cours" ? "2px 10px" : "6px 12px",
-                    borderRadius: "20px",
-                    fontSize: "12px",
-                    fontWeight: "500",
-                    background: t.status === "en_attente_analyse" ? "rgba(13, 173, 219, 0.1)" : 
-                               t.status === "assigne_technicien" ? "rgba(255, 122, 27, 0.1)" : 
-                               t.status === "en_cours" ? "rgba(15, 31, 61, 0.1)" : 
-                               t.status === "resolu" ? "rgba(47, 158, 68, 0.1)" : 
-                               t.status === "cloture" ? "#e5e7eb" :
-                               t.status === "rejete" ? "#fee2e2" : "#e0e0e0",
-                    color: t.status === "resolu" ? "#2F9E44" : t.status === "en_attente_analyse" ? "#0DADDB" : t.status === "en_cours" ? "#0F1F3D" : t.status === "cloture" ? "#374151" : t.status === "rejete" ? "#991b1b" : t.status === "assigne_technicien" ? "#FF7A1B" : "white",
-                    whiteSpace: "nowrap",
-                    display: "inline-block"
-                  }}>
-                    {t.status === "en_attente_analyse" ? "En attente d'assignation" :
-                     t.status === "assigne_technicien" ? "Assigné" :
-                     t.status === "en_cours" ? "En cours" :
-                     t.status === "resolu" ? "Résolu" :
-                     t.status === "cloture" ? "Clôturé" :
-                     t.status === "rejete" ? "Rejeté" : t.status}
-                  </span>
-                </td>
-                <td style={{ padding: "12px 16px" }}>
-                  {t.status === "en_attente_analyse" ? (
-                    // Actions pour tickets en attente
-                    selectedTicket === t.id ? (
+                ) : (
+                  recentTickets.map((t) => {
+                    const isDelegatedToMe = roleName === "Adjoint DSI" && delegatedTicketsByDSI.has(t.id);
+                    
+                    // Fonction helper pour calculer la date relative
+                    const getRelativeTime = (date: string) => {
+                      const now = new Date();
+                      const past = new Date(date);
+                      const diffInMs = now.getTime() - past.getTime();
+                      const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+                      
+                      if (diffInDays === 0) return "aujourd'hui";
+                      if (diffInDays === 1) return "il y a 1 jour";
+                      return `il y a ${diffInDays} jours`;
+                    };
+
+                    // Fonction helper pour obtenir les initiales
+                    const getInitials = (name: string) => {
+                      if (!name) return "??";
+                      const parts = name.split(" ");
+                      if (parts.length >= 2) {
+                        return (parts[0][0] + parts[1][0]).toUpperCase();
+                      }
+                      return name.substring(0, 2).toUpperCase();
+                    };
+
+                    // Couleur de la barre selon la priorité
+                    const borderColor = t.priority === "critique" ? "#E53E3E" : 
+                                       t.priority === "haute" ? "#F59E0B" : 
+                                       t.priority === "faible" ? "rgba(107, 114, 128, 0.3)" : 
+                                       "#0DADDB";
+
+                    // Déterminer le type de ticket basé sur la catégorie
+                    const category = t.category || "";
+                    const isApplicatif = category.toLowerCase().includes("logiciel") || 
+                                        category.toLowerCase().includes("applicatif") ||
+                                        category.toLowerCase().includes("application");
+                    const categoryType = isApplicatif ? "Applicatif" : "Matériel";
+                    const CategoryIcon = isApplicatif ? Monitor : Wrench;
+
+                    return (
+                      <div
+                        key={t.id}
+                        onClick={() => loadTicketDetails(t.id)}
+                        style={{
+                          position: "relative",
+                          background: "white",
+                          borderRadius: "12px",
+                          padding: "16px",
+                          border: "1px solid #e5e7eb",
+                          boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                          overflow: "visible",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.boxShadow = "0 6px 24px rgba(0,0,0,0.15)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.1)";
+                        }}
+                      >
+                        {/* Barre de priorité à gauche */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: "4px",
+                            background: borderColor,
+                            borderTopLeftRadius: "12px",
+                            borderBottomLeftRadius: "12px",
+                          }}
+                        />
+
+                        {/* En-tête : ID + Badges + Menu 3 points */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: "14px", color: "#1f2937", fontFamily: "monospace", fontWeight: "600" }}>
+                              {formatTicketNumber(t.number)}
+                            </span>
+                            
+                            {/* Badge Statut */}
+                            <span style={{
+                              padding: t.status === "en_cours" ? "2px 10px" : "3px 8px",
+                              borderRadius: "20px",
+                              fontSize: t.status === "en_cours" ? "12px" : "10px",
+                              fontWeight: "500",
+                              background: t.status === "en_attente_analyse" ? "rgba(13, 173, 219, 0.1)" : t.status === "assigne_technicien" ? "rgba(255, 122, 27, 0.1)" : t.status === "en_cours" ? "rgba(15, 31, 61, 0.1)" : t.status === "resolu" ? "rgba(47, 158, 68, 0.1)" : t.status === "rejete" ? "#fee2e2" : t.status === "cloture" ? "#e5e7eb" : "#e5e7eb",
+                              color: t.status === "en_attente_analyse" ? "#0DADDB" : t.status === "assigne_technicien" ? "#FF7A1B" : t.status === "en_cours" ? "#0F1F3D" : t.status === "resolu" ? "#2F9E44" : t.status === "rejete" ? "#991b1b" : t.status === "cloture" ? "#374151" : "#374151",
+                              whiteSpace: "nowrap",
+                            }}>
+                              {t.status === "en_attente_analyse" ? "En attente d'assignation" :
+                               t.status === "assigne_technicien" ? "Assigné au technicien" :
+                               t.status === "en_cours" ? "En cours" :
+                               t.status === "resolu" ? "Résolu" :
+                               t.status === "rejete" ? "Rejeté" :
+                               t.status === "cloture" ? "Clôturé" : t.status}
+                            </span>
+
+                            {/* Badge Priorité */}
+                            <span style={{
+                              padding: "3px 8px",
+                              borderRadius: "20px",
+                              fontSize: "10px",
+                              fontWeight: "500",
+                              background: t.priority === "critique" ? "rgba(229, 62, 62, 0.1)" : t.priority === "haute" ? "rgba(245, 158, 11, 0.1)" : t.priority === "moyenne" ? "rgba(13, 173, 219, 0.1)" : t.priority === "faible" ? "#E5E7EB" : "#e5e7eb",
+                              color: t.priority === "critique" ? "#E53E3E" : t.priority === "haute" ? "#F59E0B" : t.priority === "moyenne" ? "#0DADDB" : t.priority === "faible" ? "#6B7280" : "#374151",
+                              whiteSpace: "nowrap",
+                            }}>
+                              {getPriorityLabel(t.priority)}
+                            </span>
+
+                            {/* Badge Catégorie */}
+                            <span style={{
+                              padding: "3px 8px",
+                              borderRadius: "20px",
+                              fontSize: "10px",
+                              fontWeight: "500",
+                              background: "#f3f4f6",
+                              color: "#1f2937",
+                              whiteSpace: "nowrap",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}>
+                              <CategoryIcon size={12} style={{ flexShrink: 0, color: "#1f2937" }} />
+                              <span>{categoryType}</span>
+                            </span>
+
+                            {/* Badge Délégué */}
+                            {isDelegatedToMe && (
+                              <span style={{
+                                padding: "3px 8px",
+                                borderRadius: "20px",
+                                fontSize: "10px",
+                                fontWeight: "600",
+                                background: "#ffc107",
+                                color: "#856404",
+                                whiteSpace: "nowrap"
+                              }}>
+                                Délégué
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Menu 3 points */}
+                          <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
+                            {t.status === "en_attente_analyse" ? (
+                              // Actions pour tickets en attente
+                              selectedTicket === t.id ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-start", flexWrap: "wrap" }}>
                         <select
                           value={selectedTechnician}
@@ -4218,7 +4306,6 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                         <button
                           onClick={(e) => { 
                             e.stopPropagation(); 
-                            
                             setOpenActionsMenuFor(openActionsMenuFor === t.id ? null : t.id);
                           }}
                           disabled={loading}
@@ -4232,26 +4319,36 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                             justifyContent: "center",
                             background: "transparent",
                             border: "none",
-                            borderRadius: 0,
+                            borderRadius: "4px",
                             cursor: "pointer",
                             color: "#475569",
                             backgroundImage:
                               "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='5' r='2' fill='%23475569'/><circle cx='12' cy='12' r='2' fill='%23475569'/><circle cx='12' cy='19' r='2' fill='%23475569'/></svg>\")",
                             backgroundRepeat: "no-repeat",
                             backgroundPosition: "center",
-                            backgroundSize: "18px 18px"
+                            backgroundSize: "18px 18px",
+                            transition: "background-color 0.2s",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = "#f3f4f6";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = "transparent";
                           }}
                         />
                         {openActionsMenuFor === t.id &&  (
                           <div
                             style={{
-                              position: "fixed",
+                              position: "absolute",
+                              top: "100%",
+                              right: 0,
+                              marginTop: "4px",
                               background: "white",
                               border: "1px solid #e5e7eb",
                               borderRadius: 8,
                               boxShadow: "0 8px 16px rgba(0,0,0,0.1)",
                               minWidth: 160,
-                              zIndex: 10000,
+                              zIndex: 1000,
                               overflow: "visible"
                             }}
                             onClick={(e) => e.stopPropagation()}
@@ -4259,44 +4356,23 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                               if (el) {
                                 const button = el.previousElementSibling as HTMLElement;
                                 if (button) {
-                                  const buttonRect = button.getBoundingClientRect();
+                                  const rect = button.getBoundingClientRect();
                                   const viewportHeight = window.innerHeight;
-                                  const menuHeight = 220; // Hauteur approximative du menu (3-4 options)
-                                  const margin = 4;
-                                  const spaceBelow = viewportHeight - buttonRect.bottom;
-                                  const spaceAbove = buttonRect.top;
-                                  const minimumSpaceAbove = menuHeight + margin + 100;
+                                  const menuHeight = 220;
+                                  const spaceBelow = viewportHeight - rect.bottom;
+                                  const spaceAbove = rect.top;
                                   
-                                  // Calculer la position du menu par rapport à la fenêtre (position: fixed)
-                                  const menuWidth = el.offsetWidth || 160;
-                                  let top: number;
-                                  let left: number;
-                                  
-                                  // Déterminer si on affiche vers le haut ou vers le bas
-                                  const canShowUp = spaceBelow < (menuHeight + margin) && spaceAbove >= minimumSpaceAbove;
-                                  
-                                  if (canShowUp) {
-                                    // Afficher vers le haut : positionner au-dessus du bouton
-                                    top = buttonRect.top - menuHeight - margin;
+                                  if (spaceBelow < menuHeight && spaceAbove > menuHeight) {
+                                    el.style.bottom = "100%";
+                                    el.style.top = "auto";
+                                    el.style.marginBottom = "4px";
+                                    el.style.marginTop = "0";
                                   } else {
-                                    // Afficher vers le bas : positionner en dessous du bouton
-                                    top = buttonRect.bottom + margin;
+                                    el.style.top = "100%";
+                                    el.style.bottom = "auto";
+                                    el.style.marginTop = "4px";
+                                    el.style.marginBottom = "0";
                                   }
-                                  
-                                  // Positionner à droite du bouton
-                                  left = buttonRect.right - menuWidth;
-                                  
-                                  // S'assurer que le menu ne dépasse pas de la fenêtre
-                                  if (left < 8) left = 8;
-                                  if (top < 8) top = 8;
-                                  if (top + menuHeight > viewportHeight - 8) {
-                                    top = viewportHeight - menuHeight - 8;
-                                  }
-                                  
-                                  el.style.top = `${top}px`;
-                                  el.style.left = `${left}px`;
-                                  el.style.right = "auto";
-                                  el.style.bottom = "auto";
                                 }
                               }
                             }}
@@ -4487,7 +4563,6 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                         <button
                           onClick={(e) => { 
                             e.stopPropagation(); 
-                            
                             setOpenActionsMenuFor(openActionsMenuFor === t.id ? null : t.id);
                           }}
                           disabled={loading}
@@ -4501,26 +4576,36 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                             justifyContent: "center",
                             background: "transparent",
                             border: "none",
-                            borderRadius: 0,
+                            borderRadius: "4px",
                             cursor: "pointer",
                             color: "#475569",
                             backgroundImage:
                               "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='5' r='2' fill='%23475569'/><circle cx='12' cy='12' r='2' fill='%23475569'/><circle cx='12' cy='19' r='2' fill='%23475569'/></svg>\")",
                             backgroundRepeat: "no-repeat",
                             backgroundPosition: "center",
-                            backgroundSize: "18px 18px"
+                            backgroundSize: "18px 18px",
+                            transition: "background-color 0.2s",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = "#f3f4f6";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = "transparent";
                           }}
                         />
                         {openActionsMenuFor === t.id &&  (
                           <div
                             style={{
-                              position: "fixed",
+                              position: "absolute",
+                              top: "100%",
+                              right: 0,
+                              marginTop: "4px",
                               background: "white",
                               border: "1px solid #e5e7eb",
                               borderRadius: 8,
                               boxShadow: "0 8px 16px rgba(0,0,0,0.1)",
                               minWidth: 160,
-                              zIndex: 10000,
+                              zIndex: 1000,
                               overflow: "visible"
                             }}
                             onClick={(e) => e.stopPropagation()}
@@ -4528,44 +4613,23 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                               if (el) {
                                 const button = el.previousElementSibling as HTMLElement;
                                 if (button) {
-                                  const buttonRect = button.getBoundingClientRect();
+                                  const rect = button.getBoundingClientRect();
                                   const viewportHeight = window.innerHeight;
-                                  const menuHeight = 220; // Hauteur approximative du menu (3-4 options)
-                                  const margin = 4;
-                                  const spaceBelow = viewportHeight - buttonRect.bottom;
-                                  const spaceAbove = buttonRect.top;
-                                  const minimumSpaceAbove = menuHeight + margin + 100;
+                                  const menuHeight = 220;
+                                  const spaceBelow = viewportHeight - rect.bottom;
+                                  const spaceAbove = rect.top;
                                   
-                                  // Calculer la position du menu par rapport à la fenêtre (position: fixed)
-                                  const menuWidth = el.offsetWidth || 160;
-                                  let top: number;
-                                  let left: number;
-                                  
-                                  // Déterminer si on affiche vers le haut ou vers le bas
-                                  const canShowUp = spaceBelow < (menuHeight + margin) && spaceAbove >= minimumSpaceAbove;
-                                  
-                                  if (canShowUp) {
-                                    // Afficher vers le haut : positionner au-dessus du bouton
-                                    top = buttonRect.top - menuHeight - margin;
+                                  if (spaceBelow < menuHeight && spaceAbove > menuHeight) {
+                                    el.style.bottom = "100%";
+                                    el.style.top = "auto";
+                                    el.style.marginBottom = "4px";
+                                    el.style.marginTop = "0";
                                   } else {
-                                    // Afficher vers le bas : positionner en dessous du bouton
-                                    top = buttonRect.bottom + margin;
+                                    el.style.top = "100%";
+                                    el.style.bottom = "auto";
+                                    el.style.marginTop = "4px";
+                                    el.style.marginBottom = "0";
                                   }
-                                  
-                                  // Positionner à droite du bouton
-                                  left = buttonRect.right - menuWidth;
-                                  
-                                  // S'assurer que le menu ne dépasse pas de la fenêtre
-                                  if (left < 8) left = 8;
-                                  if (top < 8) top = 8;
-                                  if (top + menuHeight > viewportHeight - 8) {
-                                    top = viewportHeight - menuHeight - 8;
-                                  }
-                                  
-                                  el.style.top = `${top}px`;
-                                  el.style.left = `${left}px`;
-                                  el.style.right = "auto";
-                                  el.style.bottom = "auto";
                                 }
                               }
                             }}
@@ -4987,18 +5051,151 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                       )}
                     </div>
                   ) : (
-                    // Pas d'action pour tickets clôturés
-                    <span style={{ color: "#999", fontSize: "12px" }}>
-                      {t.status === "cloture" ? "Clôturé" : "N/A"}
-                    </span>
+                    // Pas d'action pour tickets clôturés - Afficher juste l'icône œil
+                    <div style={{ position: "relative" }}>
+                      <button
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          loadTicketDetails(t.id);
+                        }}
+                        disabled={loading}
+                        title="Voir détails"
+                        aria-label="Voir détails"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "#f3f4f6",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          color: "#475569",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#e5e7eb";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "#f3f4f6";
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                    </div>
                   )}
-                </td>
-              </tr>
-              );
-            })
-          )}
-              </tbody>
-              </table>
+                          </div>
+                        </div>
+
+                        {/* Titre du ticket */}
+                        <h4 style={{
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          color: "#1f2937",
+                          marginBottom: "6px",
+                          lineHeight: "1.3",
+                        }}>
+                          {t.title}
+                        </h4>
+
+                        {/* Description du ticket */}
+                        <p style={{
+                          fontSize: "13px",
+                          color: "#6b7280",
+                          marginBottom: "12px",
+                          lineHeight: "1.4",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}>
+                          {t.description || "Aucune description"}
+                        </p>
+
+                        {/* Pied de carte : Créateur, Date, Agence, Assigné */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            {/* Avatar + Nom créateur */}
+                            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                              <div style={{
+                                width: "28px",
+                                height: "28px",
+                                borderRadius: "50%",
+                                background: "#e5e7eb",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                color: "#374151",
+                              }}>
+                                {getInitials(t.creator?.full_name || "N/A")}
+                              </div>
+                              <span style={{ fontSize: "12px", color: "#374151", fontWeight: "500" }}>
+                                {t.creator?.full_name || "N/A"}
+                              </span>
+                            </div>
+
+                            {/* Agence */}
+                            {(t.creator?.agency || t.user_agency) && (
+                              <>
+                                <span style={{ fontSize: "11px", color: "#9ca3af" }}>•</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                  <span style={{ fontSize: "11px", color: "#9ca3af" }}>
+                                    {t.creator?.agency || t.user_agency || "N/A"}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+
+                            {/* Date relative */}
+                            {t.created_at && (
+                              <>
+                                <span style={{ fontSize: "11px", color: "#9ca3af" }}>•</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                  <Clock size={12} color="#9ca3af" />
+                                  <span style={{ fontSize: "11px", color: "#9ca3af" }}>
+                                    {getRelativeTime(t.created_at)}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+
+                            {/* Flèche + Assigné (si existe) */}
+                            {t.technician && (
+                              <>
+                                <span style={{ fontSize: "11px", color: "#9ca3af" }}>→</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                  <div style={{
+                                    width: "20px",
+                                    height: "20px",
+                                    borderRadius: "50%",
+                                    background: "rgba(255, 122, 27, 0.2)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "10px",
+                                    fontWeight: "600",
+                                    color: "#FF7A1B",
+                                  }}>
+                                    {getInitials(t.technician.full_name)}
+                                  </div>
+                                  <span style={{ fontSize: "12px", color: "#374151", fontWeight: "500" }}>
+                                    {t.technician.full_name}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
                 );
               })()}
             </>
