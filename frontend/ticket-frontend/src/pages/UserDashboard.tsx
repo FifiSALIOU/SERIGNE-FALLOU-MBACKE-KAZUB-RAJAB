@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import type { FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Clock, CheckCircle, LayoutDashboard, PlusCircle, Ticket, ChevronLeft, ChevronRight, Bell, Wrench, Monitor, Search, Send, Info, CheckCircle2, AlertTriangle, XCircle, Check } from "lucide-react";
+import { Clock, CheckCircle, LayoutDashboard, PlusCircle, Ticket, ChevronLeft, ChevronRight, Bell, Wrench, Monitor, Search, Send, Info, CheckCircle2, AlertTriangle, XCircle, Check, Pencil, Trash2 } from "lucide-react";
 import helpdeskLogo from "../assets/helpdesk-logo.png";
 
 interface UserDashboardProps {
@@ -1662,7 +1662,10 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                           cursor: isBlocked ? "not-allowed" : "pointer",
                           fontSize: "14px",
                           fontWeight: "500",
-                          opacity: isBlocked ? 0.6 : 1
+                          opacity: isBlocked ? 0.6 : 1,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px"
                         }}
                         onMouseEnter={(e) => {
                           if (!isBlocked) e.currentTarget.style.backgroundColor = "#d1d5db";
@@ -1671,6 +1674,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                           if (!isBlocked) e.currentTarget.style.backgroundColor = "#e5e7eb";
                         }}
                       >
+                        <Pencil size={16} />
                         Modifier
                       </button>
                     );
@@ -1702,7 +1706,10 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                           cursor: isBlocked ? "not-allowed" : "pointer",
                           fontSize: "14px",
                           fontWeight: "500",
-                          opacity: isBlocked ? 0.6 : 1
+                          opacity: isBlocked ? 0.6 : 1,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px"
                         }}
                         onMouseEnter={(e) => {
                           if (!isBlocked) e.currentTarget.style.backgroundColor = "#d1d5db";
@@ -1711,6 +1718,7 @@ function UserDashboard({ token: tokenProp }: UserDashboardProps) {
                           if (!isBlocked) e.currentTarget.style.backgroundColor = "#e5e7eb";
                         }}
                       >
+                        <Trash2 size={16} />
                         Supprimer
                       </button>
                     );
