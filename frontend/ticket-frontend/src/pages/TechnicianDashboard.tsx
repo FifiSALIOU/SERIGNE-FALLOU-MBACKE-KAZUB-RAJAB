@@ -211,28 +211,32 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
 
   // La disponibilité du technicien est désormais déterminée côté DSI via le statut global de l'utilisateur.
 
-  useEffect(() => {
-    async function loadTickets(searchTerm?: string) {
-      try {
-        const url = new URL("http://localhost:8000/tickets/assigned");
-        if (searchTerm && searchTerm.trim() !== "") {
-          url.searchParams.append("search", searchTerm.trim());
-        }
-        
-        const res = await fetch(url.toString(), {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setAllTickets(data);
-        }
-      } catch (err) {
-        console.error("Erreur chargement tickets:", err);
-      }
+  async function loadTickets(searchTerm?: string) {
+    if (!token || token.trim() === "") {
+      return;
     }
+    
+    try {
+      const url = new URL("http://localhost:8000/tickets/assigned");
+      if (searchTerm && searchTerm.trim() !== "") {
+        url.searchParams.append("search", searchTerm.trim());
+      }
+      
+      const res = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllTickets(data);
+      }
+    } catch (err) {
+      console.error("Erreur chargement tickets:", err);
+    }
+  }
 
+  useEffect(() => {
     async function loadUserInfo() {
       try {
         const meRes = await fetch("http://localhost:8000/auth/me", {
@@ -263,6 +267,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
     const interval = setInterval(() => {
       void loadNotifications();
       void loadUnreadCount();
+      void loadTickets(ticketSearchQuery);
     }, 30000);
     
     return () => clearInterval(interval);
@@ -1352,12 +1357,12 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
         <div style={{ flex: 1, padding: "30px", overflow: activeSection === "notifications" ? "hidden" : "auto", paddingTop: "80px" }}>
           <div style={{ maxWidth: 1200, margin: "0 auto" }}>
             {activeSection === "dashboard" && (
-              <div style={{ marginTop: "8px", marginBottom: "20px" }}>
+              <div style={{ marginTop: "32px", marginBottom: "20px" }}>
                 <div style={{ fontSize: "22px", fontWeight: 700, color: "#111827", marginBottom: "4px" }}>
-                  Mes Interventions
+                  Espace Technicien 🔧
                 </div>
                 <div style={{ fontSize: "15px", color: "#4b5563" }}>
-                  Traitez vos tickets et aidez vos collègues
+                  Vos tickets assignés
                 </div>
               </div>
             )}
