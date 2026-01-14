@@ -6724,8 +6724,26 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                         .toUpperCase()
                         .substring(0, 2) || "??";
                       
-                      // Calculer les tickets relancés (par défaut 0 si non disponible)
-                      const reopenedCount = 0; // À calculer depuis l'historique si nécessaire
+                      // Calculer les statistiques réelles à partir des tickets
+                      const techTickets = allTickets.filter((t: Ticket) => t.technician_id === tech.id);
+                      
+                      // En cours : tickets avec status "en_cours"
+                      const inProgressCount = techTickets.filter((t: Ticket) => t.status === "en_cours").length;
+                      
+                      // Assignés : tickets avec status "assigne_technicien" ou "en_cours"
+                      const assignedCount = techTickets.filter((t: Ticket) => 
+                        t.status === "assigne_technicien" || t.status === "en_cours"
+                      ).length;
+                      
+                      // Résolus : tickets avec status "resolu" ou "cloture"
+                      const resolvedCount = techTickets.filter((t: Ticket) => 
+                        t.status === "resolu" || t.status === "cloture"
+                      ).length;
+                      
+                      // Relancés : tickets qui ont été rejetés puis réouverts (status "rejete" ou qui ont été réouverts)
+                      const reopenedCount = techTickets.filter((t: Ticket) => 
+                        t.status === "rejete"
+                      ).length;
                       
                       return (
                         <div
@@ -6835,7 +6853,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                                   fontWeight: 600,
                                   color: "hsl(199, 89%, 48%)"
                                 }}>
-                                  {tech.in_progress_tickets_count || 0}
+                                  {inProgressCount}
                                 </span>
                               </div>
                               <span style={{
@@ -6855,7 +6873,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                                   fontWeight: 600,
                                   color: "hsl(25, 95%, 53%)"
                                 }}>
-                                  {tech.assigned_tickets_count || 0}
+                                  {assignedCount}
                                 </span>
                               </div>
                               <span style={{
@@ -6875,7 +6893,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                                   fontWeight: 600,
                                   color: "hsl(142, 76%, 36%)"
                                 }}>
-                                  {(tech as any).resolved_tickets_count || (tech as any).closed_tickets_count || 0}
+                                  {resolvedCount}
                                 </span>
                               </div>
                               <span style={{
