@@ -1005,7 +1005,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             alignItems: "center", 
             gap: "12px", 
             padding: "10px", 
-            background: activeSection === "tickets-rejetes" ? "rgba(255,255,255,0.1)" : "transparent", 
+            background: activeSection === "tickets-rejetes" ? "hsl(25, 95%, 53%)" : "transparent", 
             borderRadius: "8px",
             cursor: "pointer",
             transition: "background 0.2s",
@@ -1020,7 +1020,7 @@ function TechnicianDashboard({ token }: TechnicianDashboardProps) {
             </svg>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "16px", fontFamily: "'Inter', system-ui, sans-serif", fontWeight: "500" }}>Tickets Rejetés</span>
+            <span style={{ fontSize: "16px", fontFamily: "'Inter', system-ui, sans-serif", fontWeight: "500", color: activeSection === "tickets-rejetes" ? "white" : "inherit" }}>Tickets Rejetés</span>
             {rejectedCount > 0 && (
               <span
                 style={{
