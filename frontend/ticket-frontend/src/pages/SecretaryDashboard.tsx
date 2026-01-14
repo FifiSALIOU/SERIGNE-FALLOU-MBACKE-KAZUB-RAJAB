@@ -178,6 +178,8 @@ function SecretaryDashboard({ token }: SecretaryDashboardProps) {
   const [showReopenModal, setShowReopenModal] = useState<boolean>(false);
   const [showAssignModal, setShowAssignModal] = useState<boolean>(false);
   const [assignModalTicketId, setAssignModalTicketId] = useState<string | null>(null);
+  const [showReassignModal, setShowReassignModal] = useState<boolean>(false);
+  const [reassignTicketId, setReassignTicketId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [roleName, setRoleName] = useState<string>("");
   const [activeSection, setActiveSection] = useState<string>("dashboard");
@@ -2654,9 +2656,16 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
     }
   }, [activeSection, location.pathname, roleName, selectedNotificationTicket, token]);
 
+  function handleReassignClick(ticketId: string) {
+    setReassignTicketId(ticketId);
+    setSelectedTechnician("");
+    setAssignmentNotes("");
+    setShowReassignModal(true);
+  }
+
   async function handleReassign(ticketId: string) {
     if (!selectedTechnician) {
-      alert("Veuillez sélectionner un technicien");
+      alert("Veuillez sélectionner un technicien pour la réassignation");
       return;
     }
 
@@ -2670,7 +2679,8 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
         },
         body: JSON.stringify({
           technician_id: selectedTechnician,
-          reason: "Réassignation par " + (selectedTicket === ticketId ? "l'agent" : ""),
+          reason: "Réassignation par Adjoint DSI",
+          notes: assignmentNotes || undefined,
         }),
       });
 
@@ -2684,8 +2694,10 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
           const ticketsData = await ticketsRes.json();
           setAllTickets(ticketsData);
         }
-        setSelectedTicket(null);
         setSelectedTechnician("");
+        setAssignmentNotes("");
+        setShowReassignModal(false);
+        setReassignTicketId(null);
         alert("Ticket réassigné avec succès");
       } else {
         const error = await res.json();
@@ -4926,7 +4938,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                             </button>
                             <div style={{ borderTop: "1px solid #e5e7eb" }}></div>
                             <button
-                              onClick={() => { setSelectedTicket(t.id); setOpenActionsMenuFor(null); }}
+                              onClick={() => { handleReassignClick(t.id); setOpenActionsMenuFor(null); }}
                               disabled={loading}
                               style={{ 
                                 width: "100%", 
@@ -6100,7 +6112,7 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                                     </button>
                                     <div style={{ borderTop: "1px solid #e5e7eb" }}></div>
                                     <button
-                                      onClick={() => { setSelectedTicket(t.id); setOpenActionsMenuFor(null); }}
+                                      onClick={() => { handleReassignClick(t.id); setOpenActionsMenuFor(null); }}
                                       disabled={loading}
                                       style={{ 
                                         width: "100%", 
@@ -9900,6 +9912,150 @@ Les données détaillées seront disponibles dans une prochaine version.</pre>
                   Sélectionnez un ticket pour voir les détails
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de réassignation */}
+      {showReassignModal && reassignTicketId && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: "white",
+            padding: "24px",
+            borderRadius: "8px",
+            maxWidth: "600px",
+            width: "90%",
+            maxHeight: "90vh",
+            overflowY: "auto"
+          }}>
+            <h3 style={{ marginBottom: "16px", color: "#17a2b8" }}>Réassigner le ticket</h3>
+            
+            {/* Informations du ticket */}
+            {(() => {
+              const ticket = allTickets.find(t => t.id === reassignTicketId);
+              return ticket ? (
+                <div style={{ marginBottom: "20px", padding: "12px", background: "#f8f9fa", borderRadius: "4px" }}>
+                  <div style={{ marginBottom: "8px" }}>
+                    <strong>Ticket {formatTicketNumber(ticket.number)}:</strong> {ticket.title}
+                  </div>
+                  {ticket.technician && (
+                    <div style={{ fontSize: "14px", color: "#666" }}>
+                      Actuellement assigné à: <strong>{ticket.technician.full_name}</strong>
+                    </div>
+                  )}
+                </div>
+              ) : null;
+            })()}
+
+            {/* Sélection du technicien */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500", color: "#333" }}>
+                Sélectionner un technicien <span style={{ color: "#dc3545" }}>*</span>
+              </label>
+              <select
+                value={selectedTechnician}
+                onChange={(e) => setSelectedTechnician(e.target.value)}
+                style={{ 
+                  width: "100%", 
+                  padding: "8px", 
+                  border: "1px solid #ddd", 
+                  borderRadius: "4px",
+                  fontSize: "14px"
+                }}
+              >
+                <option value="">Sélectionner un technicien</option>
+                {(() => {
+                  const ticket = allTickets.find(t => t.id === reassignTicketId);
+                  const filteredTechs = ticket ? getFilteredTechnicians(ticket.type) : technicians;
+                  return filteredTechs.map((tech) => {
+                    const workload = allTickets.filter((tk) => 
+                      tk.technician_id === tech.id && 
+                      (tk.status === "assigne_technicien" || tk.status === "en_cours")
+                    ).length;
+                    const specialization = tech.specialization ? ` (${tech.specialization})` : "";
+                    return (
+                      <option key={tech.id} value={tech.id}>
+                        {tech.full_name}{specialization} - {workload} ticket(s)
+                      </option>
+                    );
+                  });
+                })()}
+              </select>
+            </div>
+
+            {/* Notes optionnelles */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "500", color: "#333" }}>
+                Notes/Instructions pour le technicien (optionnel)
+              </label>
+              <textarea
+                value={assignmentNotes}
+                onChange={(e) => setAssignmentNotes(e.target.value)}
+                placeholder="Exemple: Ce ticket nécessite une attention particulière..."
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  resize: "vertical"
+                }}
+              />
+            </div>
+
+            {/* Boutons */}
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => {
+                  setShowReassignModal(false);
+                  setReassignTicketId(null);
+                  setSelectedTechnician("");
+                  setAssignmentNotes("");
+                }}
+                disabled={loading}
+                style={{
+                  padding: "10px 20px",
+                  background: "#6c757d",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500"
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => reassignTicketId && handleReassign(reassignTicketId)}
+                disabled={loading || !selectedTechnician}
+                style={{
+                  padding: "10px 20px",
+                  background: "#17a2b8",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: loading || !selectedTechnician ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  opacity: loading || !selectedTechnician ? 0.6 : 1
+                }}
+              >
+                {loading ? "Réassignation..." : "Confirmer la réassignation"}
+              </button>
             </div>
           </div>
         </div>
